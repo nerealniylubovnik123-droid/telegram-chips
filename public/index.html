@@ -6,64 +6,105 @@
   <title>Chips Game</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    body{font-family:system-ui;background:#0e1117;color:#e6edf3;margin:0;padding:16px}
-    button{background:#2f81f7;border:none;padding:10px 14px;border-radius:12px;color:#fff;font-weight:600;cursor:pointer}
-    pre{background:#0b0f14;padding:10px;border-radius:12px;border:1px dashed #30363d;color:#9da7b3;white-space:pre-wrap}
-    .hidden{display:none}
+    body {font-family:system-ui;background:#0e1117;color:#e6edf3;margin:0;padding:20px;}
+    button {background:#2f81f7;border:none;padding:10px 14px;border-radius:10px;color:#fff;font-weight:600;cursor:pointer;margin:4px 0;}
+    input {padding:8px;border-radius:8px;border:1px solid #30363d;background:#161b22;color:#e6edf3;width:100%;box-sizing:border-box;}
+    .card {background:#161b22;padding:16px;border-radius:12px;margin:10px 0;}
+    h2 {margin:8px 0;}
+    pre {background:#0b0f14;padding:8px;border-radius:8px;white-space:pre-wrap;font-size:13px;}
+    .hidden {display:none;}
   </style>
 </head>
 <body>
-  <h1>Игра фишек</h1>
-  <button id="startBtn">Начать / Присоединиться</button>
-  <div id="ui" class="hidden">
-    <p>✅ Интерфейс загружен. Теперь всё работает.</p>
+  <h1>🎲 Chips Game</h1>
+  <div id="screenStart">
+    <button id="btnStart">Начать / Присоединиться</button>
   </div>
-  <pre id="status">Загрузка…</pre>
+
+  <div id="screenRole" class="hidden">
+    <h2>Выберите роль:</h2>
+    <button id="asAdmin">Администратор</button>
+    <button id="asPlayer">Игрок</button>
+  </div>
+
+  <div id="screenAdmin" class="hidden">
+    <h2>Администратор</h2>
+    <div class="card">
+      <button id="btnSummary">Общая сводка</button>
+      <button id="btnEnd">Закончить игру</button>
+    </div>
+    <pre id="adminOut"></pre>
+  </div>
+
+  <div id="screenPlayer" class="hidden">
+    <h2>Игрок</h2>
+    <div class="card">
+      <input id="chipsInput" type="number" placeholder="Введите количество фишек">
+      <button id="btnReq">Запросить фишки</button>
+      <button id="btnReturn">Вернуть фишки</button>
+    </div>
+    <pre id="playerOut"></pre>
+  </div>
 
   <script>
     const tg = window.Telegram?.WebApp;
     tg?.expand();
 
-    const statusEl = document.getElementById('status');
-    const log = (obj)=>statusEl.textContent = typeof obj==='string'?obj:JSON.stringify(obj,null,2);
+    const $ = (id) => document.getElementById(id);
+    const log = (el, obj) => el.textContent = typeof obj==='string'?obj:JSON.stringify(obj,null,2);
 
     const initData = tg?.initData || "";
-    const initDataUnsafe = tg?.initDataUnsafe ? JSON.stringify(tg.initDataUnsafe) : "";
+    const initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
 
     async function api(path, bodyObj={}) {
-      try {
-        bodyObj.__initData = initData;
-        bodyObj.__initDataUnsafe = initDataUnsafe;
-        const res = await fetch(path, {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify(bodyObj)
-        });
-        const text = await res.text();
-        try { return JSON.parse(text); } catch { return {ok:false,error:'Bad JSON',raw:text}; }
-      } catch(e) {
-        return { ok:false, error:e.message };
-      }
+      bodyObj.__initData = initData;
+      bodyObj.__initDataUnsafe = initDataUnsafe;
+      const res = await fetch(path, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(bodyObj)
+      });
+      return await res.json();
     }
 
-    document.getElementById('startBtn').onclick = async ()=>{
-      log({click:'start', sending:true});
+    let currentRole = null;
+
+    $('btnStart').onclick = async ()=>{
       const r = await api('/api/game/start');
-      log({click:'start', response:r});
       if(r.ok){
-        document.getElementById('ui').classList.remove('hidden');
-      } else {
-        alert(r.error||'Ошибка');
-      }
+        $('screenStart').classList.add('hidden');
+        $('screenRole').classList.remove('hidden');
+      } else alert(r.error);
     };
 
-    log({boot:{
-      hasTG:!!tg,
-      initData_len:initData.length,
-      user_id:tg?.initDataUnsafe?.user?.id||null,
-      chat_id:tg?.initDataUnsafe?.chat?.id||null,
-      platform:tg?.platform||'unknown'
-    }});
+    $('asAdmin').onclick = ()=>{currentRole='admin';$('screenRole').classList.add('hidden');$('screenAdmin').classList.remove('hidden');};
+    $('asPlayer').onclick = ()=>{currentRole='player';$('screenRole').classList.add('hidden');$('screenPlayer').classList.remove('hidden');};
+
+    // --- ADMIN ACTIONS ---
+    $('btnSummary').onclick = async ()=>{
+      const r = await fetch('/api/admin/summary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({__initData:initData,__initDataUnsafe:initDataUnsafe})});
+      const j = await r.json();
+      log($('adminOut'), j);
+    };
+
+    $('btnEnd').onclick = async ()=>{
+      const r = await api('/api/admin/end');
+      log($('adminOut'), r);
+    };
+
+    // --- PLAYER ACTIONS ---
+    $('btnReq').onclick = async ()=>{
+      const amt = parseInt($('chipsInput').value||'0');
+      if(amt<=0)return alert('Введите число >0');
+      const r = await api('/api/player/request',{amount:amt,type:'request'});
+      log($('playerOut'), r);
+    };
+    $('btnReturn').onclick = async ()=>{
+      const amt = parseInt($('chipsInput').value||'0');
+      if(amt<=0)return alert('Введите число >0');
+      const r = await api('/api/player/request',{amount:amt,type:'return'});
+      log($('playerOut'), r);
+    };
   </script>
 </body>
 </html>
