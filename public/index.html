@@ -3,21 +3,117 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Chips Game</title>
+  <title>🎲 Chips Game</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    body {font-family:system-ui;background:#0e1117;color:#e6edf3;margin:0;padding:20px;}
-    button {background:#2f81f7;border:none;padding:10px 14px;border-radius:10px;color:#fff;font-weight:600;cursor:pointer;margin:4px 0;}
-    button.secondary{background:#30363d}
-    input,select {padding:8px;border-radius:8px;border:1px solid #30363d;background:#161b22;color:#e6edf3;width:100%;box-sizing:border-box;}
-    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .card {background:#161b22;padding:16px;border-radius:12px;margin:10px 0;}
-    h2 {margin:8px 0;}
-    .hidden {display:none;}
-    .req {padding:10px;margin:6px 0;border-radius:8px;background:#20262f;border:1px solid #2f81f7;}
-    .list{font-size:14px}
-    .list div{padding:6px 0;border-bottom:1px solid #2a313b}
-    .badge{display:inline-block;min-width:18px;padding:2px 6px;border-radius:999px;background:#f0ad4e;color:#111;font-weight:700;margin-left:6px}
+    :root {
+      --bg-dark: #0d1117;
+      --bg-card: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --accent: #2f81f7;
+      --green: #2ea043;
+      --red: #da3633;
+      --yellow: #f0ad4e;
+      --shadow: 0 4px 10px rgba(0,0,0,0.25);
+    }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: linear-gradient(180deg, #0d1117 0%, #111820 100%);
+      color: var(--text);
+      margin: 0; padding: 20px;
+      transition: all 0.3s ease;
+    }
+
+    h1 {
+      text-align: center;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 20px;
+    }
+
+    button {
+      background: var(--accent);
+      border: none;
+      padding: 10px 16px;
+      border-radius: 10px;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    button:hover { transform: scale(1.02); background:#3889f8; }
+    button.secondary { background: #30363d; color: #e6edf3; }
+    button.secondary:hover { background: #3a414b; }
+
+    input, select {
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .hidden { display: none; }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+      margin: 10px 0;
+      animation: fadeIn 0.4s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .req {
+      background: #1b212c;
+      padding: 10px;
+      border-radius: 10px;
+      margin: 6px 0;
+      border-left: 4px solid var(--accent);
+    }
+    .req.pending { border-left-color: var(--yellow); }
+    .req.approved { border-left-color: var(--green); }
+    .req.rejected { border-left-color: var(--red); }
+
+    .list { font-size: 14px; }
+    .list div { padding: 6px 0; border-bottom: 1px solid #2a313b; }
+
+    .badge {
+      display: inline-block;
+      min-width: 18px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: var(--yellow);
+      color: #111;
+      font-weight: 700;
+      margin-left: 6px;
+    }
+
+    .role-label {
+      text-align: center;
+      padding: 6px 0;
+      font-size: 14px;
+      color: var(--yellow);
+    }
+
+    .fade-enter {
+      opacity: 0; transform: scale(0.98);
+    }
+    .fade-enter-active {
+      opacity: 1; transform: scale(1);
+      transition: all 0.3s ease;
+    }
   </style>
 </head>
 <body>
@@ -28,20 +124,23 @@
   </div>
 
   <div id="screenRole" class="hidden">
-    <h2>Выберите роль:</h2>
-    <button id="asAdmin">Администратор</button>
-    <button id="asPlayer">Игрок</button>
+    <div class="card">
+      <h2>Выберите роль</h2>
+      <div class="row">
+        <button id="asAdmin">🧩 Администратор</button>
+        <button id="asPlayer">🎮 Игрок</button>
+      </div>
+    </div>
   </div>
 
-  <!-- ADMIN -->
   <div id="screenAdmin" class="hidden">
-    <h2>Администратор</h2>
+    <div class="role-label">👑 Вы администратор</div>
 
     <div class="card">
       <div class="row">
-        <input id="adminAmount" type="number" placeholder="Сколько фишек взять (админ как игрок)" />
-        <button id="adminReqBtn">Взять</button>
-        <button id="adminRetBtn" class="secondary">Вернуть</button>
+        <input id="adminAmount" type="number" placeholder="Введите количество фишек" />
+        <button id="adminReqBtn">💰 Взять</button>
+        <button id="adminRetBtn" class="secondary">♻️ Вернуть</button>
       </div>
     </div>
 
@@ -49,37 +148,38 @@
       <div class="row">
         <button id="btnRefresh">🔄 Заявки <span id="badge" class="badge" style="display:none">0</span></button>
         <button id="btnPlayers" class="secondary">👥 Игроки и суммы</button>
-        <button id="btnEnd" class="secondary">🛑 Закончить игру</button>
+        <button id="btnEnd" class="secondary">🛑 Завершить игру</button>
       </div>
     </div>
 
     <div id="adminSectionRequests" class="card">
-      <h3>Заявки (ожидают решения)</h3>
+      <h3>📩 Заявки игроков</h3>
       <div id="reqList"></div>
     </div>
 
     <div id="adminSectionPlayers" class="card hidden">
-      <h3>Список игроков</h3>
+      <h3>👥 Список игроков</h3>
       <div id="playersList" class="list"></div>
       <div class="row" style="margin-top:10px">
         <select id="newAdminSelect"></select>
-        <button id="btnChangeAdmin">Сделать админом</button>
+        <button id="btnChangeAdmin">👑 Сделать админом</button>
       </div>
     </div>
   </div>
 
-  <!-- PLAYER -->
   <div id="screenPlayer" class="hidden">
-    <h2>Игрок</h2>
+    <div class="role-label">🎮 Вы игрок</div>
+
     <div class="card">
       <div class="row">
         <input id="chipsInput" type="number" placeholder="Введите количество фишек">
-        <button id="btnReq">Запросить</button>
-        <button id="btnReturn" class="secondary">Вернуть</button>
+        <button id="btnReq">💰 Запросить</button>
+        <button id="btnReturn" class="secondary">♻️ Вернуть</button>
       </div>
     </div>
+
     <div class="card">
-      <h3>Мои заявки</h3>
+      <h3>🧾 Мои заявки</h3>
       <div id="myHistory" class="list"></div>
     </div>
   </div>
@@ -91,30 +191,24 @@
     const $ = id => document.getElementById(id);
     const initData = tg?.initData || "";
     const initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
-    const userId = tg?.initDataUnsafe?.user?.id || tg?.initDataUnsafe?.user_id;
+    const userId = tg?.initDataUnsafe?.user?.id;
     const bodyWithAuth = (extra={}) => JSON.stringify(Object.assign({}, extra, {__initData:initData,__initDataUnsafe:initDataUnsafe}));
 
     async function post(path, payloadObj={}) {
-      const res = await fetch(path, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: bodyWithAuth(payloadObj)
-      });
+      const res = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: bodyWithAuth(payloadObj) });
       return await res.json();
     }
 
     let currentRole = null;
     let adminUserId = null;
 
-    // ---- Навигация
     $('btnStart').onclick = async ()=>{
       const r = await post('/api/game/start');
       if(r.ok){ 
         $('screenStart').classList.add('hidden');
         $('screenRole').classList.remove('hidden'); 
         adminUserId = r.game.admin_user_id;
-      }
-      else alert(r.error);
+      } else alert(r.error);
     };
 
     $('asAdmin').onclick = ()=>switchRole('admin');
@@ -126,124 +220,101 @@
       $('screenAdmin').classList.toggle('hidden', role!=='admin');
       $('screenPlayer').classList.toggle('hidden', role!=='player');
       if(role==='admin'){
-        loadPending(); 
-        loadPlayers(); 
-        startAdminPolling();
+        loadPending(); loadPlayers(); startAdminPolling();
       } else {
-        loadMyHistory(); 
-        startPlayerPolling();
+        loadMyHistory(); startPlayerPolling();
       }
     }
 
-    // ---- Игрок
-    $('btnReq').onclick = async ()=>{
-      const amt = parseInt(($('chipsInput').value||'0'), 10);
-      if(amt<=0) return alert('Введите число > 0');
-      const r = await post('/api/player/request', {amount:amt, type:'request'});
-      if(!r.ok) alert(r.error); else $('chipsInput').value='';
-      loadMyHistory();
-    };
+    $('btnReq').onclick = async ()=>handleRequest('request');
+    $('btnReturn').onclick = async ()=>handleRequest('return');
 
-    $('btnReturn').onclick = async ()=>{
+    async function handleRequest(type){
       const amt = parseInt(($('chipsInput').value||'0'), 10);
       if(amt<=0) return alert('Введите число > 0');
-      const r = await post('/api/player/request', {amount:amt, type:'return'});
+      const r = await post('/api/player/request', {amount:amt, type});
       if(!r.ok) alert(r.error); else $('chipsInput').value='';
       loadMyHistory();
-    };
+    }
 
     async function loadMyHistory(){
       const r = await post('/api/player/history');
       const box = $('myHistory');
       box.innerHTML = '';
       if(!r.ok){ box.textContent = r.error; return; }
-      if(!r.history || r.history.length===0){ box.innerHTML = '<i>Нет заявок</i>'; return; }
+      if(!r.history?.length){ box.innerHTML = '<i>Нет заявок</i>'; return; }
       for(const item of r.history){
         const div=document.createElement('div');
-        div.innerHTML = `<b>${item.type==='request'?'Запрос':'Возврат'}</b> · ${item.amount} · <b>${item.status}</b>`;
+        div.innerHTML = `<b>${item.type==='request'?'Запрос':'Возврат'}</b> · ${item.amount} · <span style="color:${item.status==='approved'?'#2ea043':item.status==='rejected'?'#da3633':'#f0ad4e'}">${item.status}</span>`;
         box.appendChild(div);
       }
     }
 
-    // ---- Админ
-    $('adminReqBtn').onclick = async ()=>{
+    $('adminReqBtn').onclick = async ()=>adminRequest('request');
+    $('adminRetBtn').onclick = async ()=>adminRequest('return');
+
+    async function adminRequest(type){
       const amt = parseInt(($('adminAmount').value||'0'), 10);
       if(amt<=0) return alert('Введите число > 0');
-      const r = await post('/api/player/request', {amount:amt, type:'request'});
+      const r = await post('/api/player/request', {amount:amt, type});
       if(!r.ok) alert(r.error); else $('adminAmount').value='';
       loadPending();
-    };
-    $('adminRetBtn').onclick = async ()=>{
-      const amt = parseInt(($('adminAmount').value||'0'), 10);
-      if(amt<=0) return alert('Введите число > 0');
-      const r = await post('/api/player/request', {amount:amt, type:'return'});
-      if(!r.ok) alert(r.error); else $('adminAmount').value='';
-      loadPending();
-    };
+    }
 
     $('btnRefresh').onclick = loadPending;
-    $('btnPlayers').onclick = ()=>{
-      $('adminSectionPlayers').classList.toggle('hidden');
-      if(!$('adminSectionPlayers').classList.contains('hidden')) loadPlayers();
-    };
-    $('btnEnd').onclick = async ()=>{
-      const r = await post('/api/admin/end');
-      alert(r.ok ? 'Игра завершена' : ('Ошибка: '+r.error));
-    };
+    $('btnPlayers').onclick = ()=>togglePlayers();
+    $('btnEnd').onclick = async ()=>alert((await post('/api/admin/end')).ok ? 'Игра завершена' : 'Ошибка');
     $('btnChangeAdmin').onclick = async ()=>{
       const val = $('newAdminSelect').value;
       if(!val) return;
       const r = await post('/api/admin/change', { new_admin_user_id: val });
-      if(!r.ok) alert(r.error);
-      else {
-        adminUserId = val;
-        alert('✅ Админ изменён');
-      }
+      if(r.ok){ adminUserId = val; alert('✅ Админ изменён'); } else alert(r.error);
     };
+
+    function togglePlayers(){
+      const el = $('adminSectionPlayers');
+      el.classList.toggle('hidden');
+      if(!el.classList.contains('hidden')) loadPlayers();
+    }
 
     async function loadPending(){
       const r = await post('/api/admin/pending');
-      const list = $('reqList');
-      const badge = $('badge');
+      const list = $('reqList'), badge = $('badge');
       list.innerHTML = '';
       if(!r.ok){ list.textContent = r.error; badge.style.display='none'; return; }
       const items = r.requests || [];
-      if(items.length===0){ list.innerHTML = '<i>Нет активных заявок</i>'; badge.style.display='none'; return; }
+      if(!items.length){ list.innerHTML = '<i>Нет активных заявок</i>'; badge.style.display='none'; return; }
       badge.textContent = items.length; badge.style.display='';
       for(const it of items){
         const el = document.createElement('div');
-        el.className = 'req';
+        el.className = `req ${it.status}`;
         el.innerHTML = `<b>${it.first_name||'Игрок'} ${it.username?('@'+it.username):''}</b><br>
-          ${it.type==='request'?'Просит':'Возвращает'} <b>${it.amount}</b> фишек
-          <div class="row" style="margin-top:6px">
-            <button data-id="${it.id}" data-s="approved">✅ Одобрить</button>
-            <button class="secondary" data-id="${it.id}" data-s="rejected">❌ Отклонить</button>
-          </div>`;
+        ${it.type==='request'?'Просит':'Возвращает'} <b>${it.amount}</b> фишек
+        <div class="row" style="margin-top:6px">
+          <button data-id="${it.id}" data-s="approved">✅ Одобрить</button>
+          <button class="secondary" data-id="${it.id}" data-s="rejected">❌ Отклонить</button>
+        </div>`;
         list.appendChild(el);
       }
       list.querySelectorAll('button[data-id]').forEach(btn=>{
         btn.onclick = async ()=>{
-          const id = parseInt(btn.getAttribute('data-id'), 10);
-          const status = btn.getAttribute('data-s');
+          const id = +btn.dataset.id, status = btn.dataset.s;
           const r = await post('/api/admin/decide', {id, status});
           if(!r.ok) alert(r.error);
-          loadPending();
-          loadPlayers();
+          loadPending(); loadPlayers();
         };
       });
     }
 
     async function loadPlayers(){
       const r = await post('/api/admin/players');
-      const box = $('playersList');
-      const sel = $('newAdminSelect');
-      box.innerHTML = '';
-      sel.innerHTML = '';
+      const box = $('playersList'), sel = $('newAdminSelect');
+      box.innerHTML = ''; sel.innerHTML = '';
       if(!r.ok){ box.textContent = r.error; return; }
-      if(!r.players || r.players.length===0){ box.innerHTML = '<i>Пока нет игроков</i>'; return; }
+      if(!r.players?.length){ box.innerHTML = '<i>Пока нет игроков</i>'; return; }
       for(const p of r.players){
         const row = document.createElement('div');
-        row.innerHTML = `<b>${p.first_name||'Игрок'} ${p.username?('@'+p.username):''}</b> — выдано: <b>${p.issued}</b>, возвращено: <b>${p.returned}</b>, разница: <b>${p.diff}</b>`;
+        row.innerHTML = `<b>${p.first_name||'Игрок'} ${p.username?('@'+p.username):''}</b> — выдано: <b>${p.issued}</b>, возвращено: <b>${p.returned}</b>, итог: <b style="color:${p.diff>0?'#2ea043':p.diff<0?'#da3633':'#f0ad4e'}">${p.diff}</b>`;
         box.appendChild(row);
 
         const opt = document.createElement('option');
@@ -253,15 +324,14 @@
       }
     }
 
-    // ---- автообновление
     async function checkRoleChange(){
-      const r = await post('/api/game/start'); // возвращает текущее состояние игры
+      const r = await post('/api/game/start');
       if(r.ok && r.game){
         if(adminUserId !== r.game.admin_user_id){
           adminUserId = r.game.admin_user_id;
-          const isNowAdmin = String(adminUserId) === String(tg?.initDataUnsafe?.user?.id);
+          const isNowAdmin = String(adminUserId) === String(userId);
           if(isNowAdmin && currentRole !== 'admin'){
-            alert('Вы стали новым админом');
+            alert('🎉 Вы стали новым админом');
             switchRole('admin');
           } else if(!isNowAdmin && currentRole === 'admin'){
             alert('Админ изменён, вы больше не админ');
@@ -271,20 +341,18 @@
       }
     }
 
-    let playerTimer = null, adminTimer = null, roleTimer = null;
+    let playerTimer, adminTimer, roleTimer;
     function startPlayerPolling(){
-      clearAllTimers();
+      clearAll(); loadMyHistory();
       playerTimer = setInterval(loadMyHistory, 5000);
       roleTimer = setInterval(checkRoleChange, 5000);
     }
     function startAdminPolling(){
-      clearAllTimers();
+      clearAll(); loadPending();
       adminTimer = setInterval(()=>{ loadPending(); checkRoleChange(); }, 5000);
     }
-    function clearAllTimers(){
-      if(playerTimer) clearInterval(playerTimer);
-      if(adminTimer) clearInterval(adminTimer);
-      if(roleTimer) clearInterval(roleTimer);
+    function clearAll(){
+      clearInterval(playerTimer); clearInterval(adminTimer); clearInterval(roleTimer);
     }
   </script>
 </body>
