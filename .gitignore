@@ -1,0 +1,13 @@
+# зависимости
+node_modules/
+
+# окружение и локальные данные
+.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# ОС/IDE
+.DS_Store
+Thumbs.db
+.vscode/
