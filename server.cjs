@@ -241,7 +241,7 @@ app.post('/api/admin/players', (req, res) => {
     ORDER BY (issued - returned) DESC, p.first_name ASC
   `).all(game.id);
 
-  res.json({ ok: true, players: rows.map(r => ({ ...r, diff: r.issued - r.returned })) });
+  res.json({ ok: true, players: rows.map(r => ({ ...r, diff: r.returned - r.issued })) });
 });
 
 // Admin: change admin
