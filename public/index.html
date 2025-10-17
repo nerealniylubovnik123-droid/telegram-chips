@@ -29,7 +29,7 @@
 <div class="wrap">
   <div class="card">
     <h1>Игра фишек</h1>
-    <p class="muted">Стартуйте в групповом чате через кнопку «Открыть мини-апп». Если открыто вне Telegram — сервер отклонит запрос.</p>
+    <p class="muted">Открывайте мини-апп из группового чата. Вне Telegram сервер отклонит запрос.</p>
     <div id="startBlock">
       <button id="startBtn">Начать / Присоединиться</button>
     </div>
@@ -80,21 +80,32 @@
 const tg = window.Telegram?.WebApp;
 tg?.expand();
 
-let initData = tg?.initData || '';
-let initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
+// Оригинальные строки Telegram WebApp
+const initData = tg?.initData || '';
+const initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
 
-// ✅ ПЕРЕДАЁМ initData ЧЕРЕЗ QUERY-ПАРАМЕТРЫ (а не заголовки)
+// Универсальный вызов API:
+// - Всегда ставим заголовки X-Tg-Init-Data / X-Tg-Init-Data-Unsafe
+// - Для POST дополнительно кладём те же значения в тело (__initData), чтобы избежать проблем с кастомными заголовками
 async function api(path, opts = {}) {
-  const url = new URL(path, window.location.origin);
-  if (initData) url.searchParams.set('initData', initData);
-  if (initDataUnsafe) url.searchParams.set('initDataUnsafe', initDataUnsafe);
+  const isPost = (opts.method || 'GET').toUpperCase() !== 'GET';
 
-  const res = await fetch(url.toString(), {
-    method: opts.method || 'GET',
-    headers: { 'Content-Type': 'application/json' },
-    body: opts.body || undefined,
-  });
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Tg-Init-Data': initData,
+    'X-Tg-Init-Data-Unsafe': initDataUnsafe
+  };
 
+  // Тело запроса
+  let body = opts.body || undefined;
+  if (isPost) {
+    const base = body ? JSON.parse(body) : {};
+    base.__initData = initData;
+    base.__initDataUnsafe = initDataUnsafe;
+    body = JSON.stringify(base);
+  }
+
+  const res = await fetch(path, { method: opts.method || 'GET', headers, body });
   let data;
   try { data = await res.json(); } catch { data = { ok:false, error:'Bad JSON' }; }
   if (!data.ok) {
@@ -113,7 +124,7 @@ async function refreshAll() {
 
 startBtn.onclick = async () => {
   const r = await api('/api/game/start', {method:'POST'});
-  if (!r.ok) return; // alert уже показан внутри api()
+  if (!r.ok) return; // alert уже показан
   const myId = tg?.initDataUnsafe?.user?.id?.toString();
   const isAdmin = r.game?.admin_user_id?.toString() === myId;
   adminBlock.style.display = isAdmin ? '' : 'none';

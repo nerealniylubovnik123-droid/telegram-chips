@@ -1,4 +1,3 @@
-
 /* Minimal Express + SQLite backend for Telegram Mini App (chips game) */
 require('dotenv').config();
 const express = require('express');
@@ -61,41 +60,35 @@ CREATE TABLE IF NOT EXISTS chip_tx (
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Telegram initData verification ---
-function checkTelegramInitData(initData) {
+function checkTelegramInitData(initDataRaw) {
   if (DEV_ALLOW_UNSAFE) return { ok: true, data: {} };
-  if (!initData) return { ok: false, error: 'Missing initData' };
+  if (!initDataRaw) return { ok: false, error: 'Missing initData' };
 
-  // Parse querystring-like initData
-  const params = {};
-  initData.split('&').forEach(kv => {
-    const [k, v] = kv.split('=');
-    params[k] = decodeURIComponent((v || '').replace(/\+/g, '%20'));
-  });
-
-  const hash = params['hash'];
+  // initDataRaw должен быть исходной строкой вида: "query_id=...&user=...&auth_date=...&hash=..."
+  // Парсим без двойного кодирования
+  const urlParams = new URLSearchParams(initDataRaw);
+  const hash = urlParams.get('hash');
   if (!hash) return { ok: false, error: 'Missing hash' };
 
-  // Build data-check-string
-  const checkParams = [];
-  for (const [k, v] of Object.entries(params)) {
-    if (k === 'hash') continue;
-    checkParams.push(`${k}=${v}`);
-  }
-  checkParams.sort(); // lexicographical
-  const dataCheckString = checkParams.join('\n');
+  // Сбор строки проверки
+  const entries = [];
+  urlParams.forEach((v, k) => {
+    if (k === 'hash') return;
+    entries.push(`${k}=${v}`);
+  });
+  entries.sort(); // лексикографически
+  const dataCheckString = entries.join('\n');
 
-  // Create secret key
+  // Секретный ключ и подпись
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
-
-  // HMAC-SHA256
   const hmac = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
   const ok = hmac === hash;
-  return { ok, data: params, error: ok ? null : 'Invalid initData signature' };
+  return { ok, data: Object.fromEntries(urlParams.entries()), error: ok ? null : 'Invalid initData signature' };
 }
 
 function getUserFromInitDataUnsafe(initDataUnsafe) {
@@ -125,17 +118,23 @@ async function tgNotifyUser(user_id, text) {
   }
 }
 
-// --- Middleware: verify initData header ---
+// --- Middleware: verify initData (headers → body → query) ---
 app.use((req, res, next) => {
-  const initData = req.header('X-Tg-Init-Data') || req.query.initData;
+  const initDataHeader = req.header('X-Tg-Init-Data');
+  const initDataBody = req.body?.__initData;
+  const initDataQuery = req.query.initData;
+  const initData = initDataHeader || initDataBody || initDataQuery;
+
+  const unsafeHeader = req.header('X-Tg-Init-Data-Unsafe');
+  const unsafeBody = req.body?.__initDataUnsafe;
+  const unsafeQuery = req.query.initDataUnsafe;
+  const initDataUnsafe = unsafeHeader || unsafeBody || unsafeQuery;
+
   const check = checkTelegramInitData(initData);
   if (!check.ok) {
     return res.status(401).json({ ok: false, error: check.error, hint: DEV_ALLOW_UNSAFE ? 'DEV_ALLOW_UNSAFE=true to bypass locally' : undefined });
   }
   req.tgInit = check.data;
-
-  // Parse user, chat from initDataUnsafe (if present)
-  const initDataUnsafe = req.header('X-Tg-Init-Data-Unsafe') || req.query.initDataUnsafe;
   req.tgUnsafe = initDataUnsafe ? getUserFromInitDataUnsafe(initDataUnsafe) : {};
   next();
 });
@@ -147,8 +146,8 @@ app.post('/api/game/start', (req, res) => {
   const chat = req.tgUnsafe.chat;
   const user = req.tgUnsafe.user;
   if (!chat || !chat.id) {
-    return res.status(400).json({ ok: false, error: 'Запусти мини‑апп из ГРУППОВОГО чата' });
-  }
+    return res.status(400).json({ ok: false, error: 'Запусти мини-апп из ГРУППОВОГО чата' });
+    }
   if (!user || !user.id) {
     return res.status(400).json({ ok: false, error: 'Нет user.id в initData' });
   }
@@ -280,8 +279,6 @@ app.post('/api/admin/request/:id/decide', requireAdmin, async (req, res) => {
     .run(approve ? 'approved' : 'rejected', String(req.tgUnsafe.user.id), id);
 
   // notify player
-  const who = db.prepare(`SELECT first_name, username FROM player WHERE game_id = ? AND user_id = ?`)
-    .get(req.game.id, row.user_id) || {};
   const text = approve
     ? (row.type === 'request' ? `Вам выдано ${row.amount} фишек` : `Возврат ${row.amount} фишек подтверждён`)
     : `Ваш запрос на ${row.amount} фишек отклонён`;
@@ -290,7 +287,6 @@ app.post('/api/admin/request/:id/decide', requireAdmin, async (req, res) => {
   // If approved return -> end game
   if (approve && row.type === 'return') {
     db.prepare(`UPDATE game SET status = 'ended', ended_at = datetime('now') WHERE id = ?`).run(req.game.id);
-    // Try to broadcast finish to all players (optional)
     try {
       const players = db.prepare(`SELECT DISTINCT user_id FROM player WHERE game_id = ?`).all(req.game.id);
       await Promise.all(players.map(pl => tgNotifyUser(pl.user_id, 'Игра завершена')));
