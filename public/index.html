@@ -16,7 +16,7 @@
   <h1>Игра фишек</h1>
   <button id="startBtn">Начать / Присоединиться</button>
   <div id="ui" class="hidden">
-    <p>Интерфейс загрузился. (После успешного старта появятся данные)</p>
+    <p>✅ Интерфейс загружен. Теперь всё работает.</p>
   </div>
   <pre id="status">Загрузка…</pre>
 
@@ -25,49 +25,44 @@
     tg?.expand();
 
     const statusEl = document.getElementById('status');
-    function log(obj){ statusEl.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj,null,2); }
+    const log = (obj)=>statusEl.textContent = typeof obj==='string'?obj:JSON.stringify(obj,null,2);
 
     const initData = tg?.initData || "";
     const initDataUnsafe = tg?.initDataUnsafe ? JSON.stringify(tg.initDataUnsafe) : "";
 
-    async function api(path, {method='GET', body=null} = {}) {
-      try{
-        const headers = { 'Content-Type': 'application/json' };
-        // Дублируем в заголовках (если Telegram пропускает их, будет плюс):
-        headers['X-Tg-Init-Data'] = initData;
-        headers['X-Tg-Init-Data-Unsafe'] = initDataUnsafe;
-
-        // Для POST кладём сырой initData в тело (сервер читает приоритетно отсюда)
-        if (method !== 'GET') {
-          const base = body ? JSON.parse(body) : {};
-          base.__initData = initData;               // без stringify/encode
-          base.__initDataUnsafe = initDataUnsafe;   // строка JSON
-          body = JSON.stringify(base);
-        }
-
-        const res = await fetch(path, { method, headers, body });
+    async function api(path, bodyObj={}) {
+      try {
+        bodyObj.__initData = initData;
+        bodyObj.__initDataUnsafe = initDataUnsafe;
+        const res = await fetch(path, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(bodyObj)
+        });
         const text = await res.text();
-        try { return JSON.parse(text); } catch { return { ok:false, error:'Bad JSON', raw:text }; }
-      }catch(e){ return { ok:false, error: e.message }; }
+        try { return JSON.parse(text); } catch { return {ok:false,error:'Bad JSON',raw:text}; }
+      } catch(e) {
+        return { ok:false, error:e.message };
+      }
     }
 
-    document.getElementById('startBtn').onclick = async () => {
-      log({ click:'start', sending:true, initLen: initData.length });
-      const r = await api('/api/game/start', { method:'POST' }); // POST с телом __initData
-      log({ click:'start', response:r });
-      if (r.ok) {
+    document.getElementById('startBtn').onclick = async ()=>{
+      log({click:'start', sending:true});
+      const r = await api('/api/game/start');
+      log({click:'start', response:r});
+      if(r.ok){
         document.getElementById('ui').classList.remove('hidden');
       } else {
-        alert(r.error || 'Ошибка');
+        alert(r.error||'Ошибка');
       }
     };
 
-    log({ boot: {
-      hasTG: !!tg,
-      initData_len: initData.length,
-      user_id: tg?.initDataUnsafe?.user?.id || null,
-      chat_id: tg?.initDataUnsafe?.chat?.id || null,
-      platform: tg?.platform || 'unknown'
+    log({boot:{
+      hasTG:!!tg,
+      initData_len:initData.length,
+      user_id:tg?.initDataUnsafe?.user?.id||null,
+      chat_id:tg?.initDataUnsafe?.chat?.id||null,
+      platform:tg?.platform||'unknown'
     }});
   </script>
 </body>
