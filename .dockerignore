@@ -1,0 +1,10 @@
+# игнорируем локальные артефакты, чтобы не попадали в Docker-образ
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.zip
