@@ -61,12 +61,13 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-/** -------- Telegram initData verification (robust) --------
- * Берём initData в приоритете:
- * 1) из заголовка X-Tg-Init-Data (если WebView пропускает)
- * 2) из тела (__initData) для POST
- * 3) сырым из req.originalUrl (?initData=...) — БЕЗ декодирования
- * Подпись строим строго по доке Telegram, учитывая, что '+' нужно трактовать как %20 перед decodeURIComponent
+/* ---------- Telegram initData verification (robust) ----------
+ * Источники initData (в порядке приоритета):
+ *  1) Заголовок:     X-Tg-Init-Data
+ *  2) Тело POST:     __initData
+ *  3) Query в URL:   ?initData=...
+ * Сервер корректно обрабатывает случаи, когда initData попал как ещё раз
+ * проценти-рованный параметр (т.е. содержит %26 вместо & и %3D вместо =).
  */
 function extractInitDataRaw(req) {
   const fromHeader = req.header('X-Tg-Init-Data');
@@ -74,13 +75,9 @@ function extractInitDataRaw(req) {
   const fromBody = req.body?.__initData;
   if (fromBody) return fromBody;
 
-  // из оригинального URL достаём ровно то, что прислал клиент (percent-encoded)
   const url = req.originalUrl || '';
   const m = url.match(/[?&]initData=([^&]+)/);
-  if (m) {
-    // возвращаем ПЕРВЫЙ захваченный параметр без decodeURIComponent
-    return m[1];
-  }
+  if (m) return m[1]; // вернём как есть (percent-encoded значение)
   return null;
 }
 
@@ -95,54 +92,85 @@ function extractInitDataUnsafeRaw(req) {
   return m ? m[1] : null;
 }
 
-function parseUnsafe(json) {
-  try { return JSON.parse(json ? decodeURIComponent(json) : '{}'); } catch { return {}; }
+/** Нормализуем initData-строку для вычисления подписи.
+ * Приходит одно из:
+ *  - "query_id=...&user=...&auth_date=...&hash=..."          (сырой)
+ *  - "query_id%3D...%26user%3D...%26auth_date%3D...%26hash%3D..." (ещё раз проценти-рованный)
+ * Возвращаем строку вида "k=v&k=v..." с уже декодированными `&` и `=`, но
+ * с нормальной интерпретацией '+' как пробелов.
+ */
+function normalizeInitDataString(raw) {
+  if (!raw) return null;
+  let s = String(raw);
+
+  // Если в значении видны %26 или %3D — это знак, что весь query за-энкоден как одно значение.
+  const looksEncodedAsWhole = /%26|%3D|%3d/.test(s);
+  if (looksEncodedAsWhole) {
+    try { s = decodeURIComponent(s.replace(/\+/g, '%20')); } catch {}
+  }
+  // теперь s должен выглядеть как "k=v&k=v..."
+  return s;
 }
 
 function checkTelegramInitData(initDataRaw) {
   if (DEV_ALLOW_UNSAFE) return { ok: true, data: {} };
   if (!initDataRaw) return { ok: false, error: 'Missing initData' };
 
-  // initDataRaw — percent-encoded строка "key=value&key=value..."
-  // Разбираем вручную, НЕ декодируя пары целиком (иначе подпись сломается).
-  const pairs = String(initDataRaw).split('&');
-  const items = []; // {k, vDecoded}
+  const s = normalizeInitDataString(initDataRaw);
+  if (!s) return { ok: false, error: 'Missing initData' };
+
+  // Парсим вручную, сохраняя точные значения
+  const pairs = s.split('&');
+  const items = [];
   let hash = null;
 
   for (const p of pairs) {
-    const eq = p.indexOf('=');
-    if (eq < 0) continue;
-    const k = p.slice(0, eq);
-    const vRaw = p.slice(eq + 1); // percent-encoded, может содержать '+'
+    const i = p.indexOf('=');
+    if (i < 0) continue;
+    const k = p.slice(0, i);
+    const vRaw = p.slice(i + 1);
+
     if (k === 'hash') {
-      // hash — hex, можно декодировать безопасно (но и без этого ок)
-      try { hash = decodeURIComponent(vRaw); } catch { hash = vRaw; }
+      hash = vRaw; // hash — шестн. строка, уже нормальная
       continue;
     }
-    // Специально заменяем '+' на '%20' перед decodeURIComponent — иначе '+' превращается в пробел и ломает подпись
-    let vDecoded;
-    try {
-      vDecoded = decodeURIComponent(vRaw.replace(/\+/g, '%20'));
-    } catch {
-      vDecoded = vRaw; // в крайнем случае используем как есть
-    }
-    items.push({ k, v: vDecoded });
+
+    // Значения Telegram считаем decoded по стандартным правилам query:
+    // '+' → пробел, %xx → байт
+    let v;
+    try { v = decodeURIComponent(vRaw.replace(/\+/g, '%20')); }
+    catch { v = vRaw; }
+    items.push({ k, v });
   }
 
   if (!hash) return { ok: false, error: 'Missing hash' };
 
-  // Строка проверки: ключи по алфавиту, формат "<key>=<value>" с decoded value
+  // data_check_string: сортируем по ключу, склеиваем `key=value` с ДЕКОДИРОВАННЫМИ values
   items.sort((a, b) => a.k.localeCompare(b.k, 'en'));
   const dataCheckString = items.map(it => `${it.k}=${it.v}`).join('\n');
 
+  // Подпись
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
   const hmac = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
   const ok = hmac === hash;
-  return { ok, data: Object.fromEntries(items.map(it => [it.k, it.v]).concat([['hash', hash]])), error: ok ? null : 'Invalid initData signature' };
+  // Сформируем объект данных для удобства
+  const dataObj = {};
+  for (const it of items) dataObj[it.k] = it.v;
+  dataObj.hash = hash;
+
+  return { ok, data: dataObj, error: ok ? null : 'Invalid initData signature' };
 }
 
-// Middleware: прикрепляем tg-данные только для /api (статике это не нужно)
+function parseUnsafeJSON(raw) {
+  if (!raw) return {};
+  let s = String(raw);
+  // Если пришёл проценти-рованный JSON, декодируем (и '+' → пробел)
+  try { s = decodeURIComponent(s.replace(/\+/g, '%20')); } catch {}
+  try { return JSON.parse(s); } catch { return {}; }
+}
+
+// Подключаем проверку только на /api/*
 app.use('/api', (req, res, next) => {
   const initDataRaw = extractInitDataRaw(req);
   const unsafeRaw = extractInitDataUnsafeRaw(req);
@@ -150,8 +178,8 @@ app.use('/api', (req, res, next) => {
   const check = checkTelegramInitData(initDataRaw);
   if (!check.ok) return res.status(401).json({ ok:false, error: check.error });
 
-  req.tgInit = check.data;
-  req.tgUnsafe = parseUnsafe(unsafeRaw);
+  req.tgInit = check.data;               // разобранные пары
+  req.tgUnsafe = parseUnsafeJSON(unsafeRaw); // объект из initDataUnsafe
   next();
 });
 

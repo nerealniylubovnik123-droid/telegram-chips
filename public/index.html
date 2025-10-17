@@ -9,12 +9,15 @@
     body{font-family:system-ui;background:#0e1117;color:#e6edf3;margin:0;padding:16px}
     button{background:#2f81f7;border:none;padding:10px 14px;border-radius:12px;color:#fff;font-weight:600;cursor:pointer}
     pre{background:#0b0f14;padding:10px;border-radius:12px;border:1px dashed #30363d;color:#9da7b3;white-space:pre-wrap}
+    .hidden{display:none}
   </style>
 </head>
 <body>
   <h1>Игра фишек</h1>
-  <p>Нажмите, чтобы начать:</p>
   <button id="startBtn">Начать / Присоединиться</button>
+  <div id="ui" class="hidden">
+    <p>Интерфейс загрузился. (После успешного старта появятся данные)</p>
+  </div>
   <pre id="status">Загрузка…</pre>
 
   <script>
@@ -22,30 +25,50 @@
     tg?.expand();
 
     const statusEl = document.getElementById('status');
+    function log(obj){ statusEl.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj,null,2); }
+
     const initData = tg?.initData || "";
     const initDataUnsafe = tg?.initDataUnsafe ? JSON.stringify(tg.initDataUnsafe) : "";
 
-    function log(obj){ statusEl.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj,null,2); }
-
-    async function apiGet(path){
+    async function api(path, {method='GET', body=null} = {}) {
       try{
-        // добавляем initData в URL без JSON.stringify (сырой)
-        const url = new URL(path, window.location.origin);
-        if(initData) url.searchParams.set("initData", encodeURIComponent(initData));
-        if(initDataUnsafe) url.searchParams.set("initDataUnsafe", encodeURIComponent(initDataUnsafe));
-        const res = await fetch(url.toString());
+        const headers = { 'Content-Type': 'application/json' };
+        // Дублируем в заголовках (если Telegram пропускает их, будет плюс):
+        headers['X-Tg-Init-Data'] = initData;
+        headers['X-Tg-Init-Data-Unsafe'] = initDataUnsafe;
+
+        // Для POST кладём сырой initData в тело (сервер читает приоритетно отсюда)
+        if (method !== 'GET') {
+          const base = body ? JSON.parse(body) : {};
+          base.__initData = initData;               // без stringify/encode
+          base.__initDataUnsafe = initDataUnsafe;   // строка JSON
+          body = JSON.stringify(base);
+        }
+
+        const res = await fetch(path, { method, headers, body });
         const text = await res.text();
-        try{ return JSON.parse(text); }catch{return {raw:text}}
-      }catch(e){ return {error:e.message} }
+        try { return JSON.parse(text); } catch { return { ok:false, error:'Bad JSON', raw:text }; }
+      }catch(e){ return { ok:false, error: e.message }; }
     }
 
-    document.getElementById('startBtn').onclick = async()=>{
-      log({click:'start', sending:true});
-      const r = await apiGet('/api/game/start');
-      log({click:'start', response:r});
+    document.getElementById('startBtn').onclick = async () => {
+      log({ click:'start', sending:true, initLen: initData.length });
+      const r = await api('/api/game/start', { method:'POST' }); // POST с телом __initData
+      log({ click:'start', response:r });
+      if (r.ok) {
+        document.getElementById('ui').classList.remove('hidden');
+      } else {
+        alert(r.error || 'Ошибка');
+      }
     };
 
-    log({initDataLength:initData.length});
+    log({ boot: {
+      hasTG: !!tg,
+      initData_len: initData.length,
+      user_id: tg?.initDataUnsafe?.user?.id || null,
+      chat_id: tg?.initDataUnsafe?.chat?.id || null,
+      platform: tg?.platform || 'unknown'
+    }});
   </script>
 </body>
 </html>
