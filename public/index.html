@@ -89,45 +89,46 @@ function setStatus(obj) {
   catch { statusBox.textContent = String(obj); }
 }
 
-// Пишем стартовые данные от Telegram (важно увидеть chat.id и user.id)
-const info = {
+window.onunhandledrejection = (e) => setStatus({promise_error: String(e.reason || e) });
+window.onerror = (msg, src, line, col) => setStatus({js_error: String(msg), src, line, col});
+
+// Базовая информация о запуске
+const boot = {
   hasTG: !!tg,
   initData_len: (tg?.initData || '').length,
   user_id: tg?.initDataUnsafe?.user?.id || null,
   chat_id: tg?.initDataUnsafe?.chat?.id || null,
   platform: tg?.platform || 'unknown'
 };
-setStatus({boot: info});
+setStatus({boot});
 
-// Оригинальные строки от Telegram
+// Строки от Telegram
 const initData = tg?.initData || '';
 const initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
 
-// Универсальный вызов API (headers + для POST дублируем в body)
-async function api(path, opts = {}) {
-  const isPost = (opts.method || 'GET').toUpperCase() !== 'GET';
-  const headers = {
-    'Content-Type': 'application/json',
-    'X-Tg-Init-Data': initData,
-    'X-Tg-Init-Data-Unsafe': initDataUnsafe
-  };
-  let body = opts.body || undefined;
-  if (isPost) {
-    const base = body ? JSON.parse(body) : {};
-    base.__initData = initData;
-    base.__initDataUnsafe = initDataUnsafe;
-    body = JSON.stringify(base);
+// API универсально: по умолчанию — GET с query (самое совместимое в WebView)
+async function api(path, {method='GET', body=null} = {}) {
+  try {
+    let url = new URL(path, window.location.origin);
+    // Всегда добавляем initData в query (и для GET, и для POST)
+    if (initData) url.searchParams.set('initData', initData);
+    if (initDataUnsafe) url.searchParams.set('initDataUnsafe', initDataUnsafe);
+
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (method !== 'GET' && body) opts.body = body;
+
+    const res = await fetch(url.toString(), opts);
+    const text = await res.text();
+    try {
+      const json = JSON.parse(text);
+      return json;
+    } catch {
+      return { ok:false, error:'Bad JSON', raw:text };
+    }
+  } catch (e) {
+    return { ok:false, error: 'Network error: ' + (e && e.message ? e.message : String(e)) };
   }
-
-  const res = await fetch(path, { method: opts.method || 'GET', headers, body });
-  let data;
-  try { data = await res.json(); } catch { data = { ok:false, error:'Bad JSON' }; }
-  return data;
 }
-
-window.onerror = (msg, src, line, col, err) => {
-  setStatus({js_error: String(msg), src, line, col});
-};
 
 const startBtn = document.getElementById('startBtn');
 const startBlock = document.getElementById('startBlock');
@@ -135,24 +136,24 @@ const playerBlock = document.getElementById('playerBlock');
 const adminBlock = document.getElementById('adminBlock');
 
 async function refreshAll() {
-  const r1 = await api('/api/player/history');
-  if (!r1.ok) { setStatus({step:'history', error:r1.error}); return; }
+  const r1 = await api('/api/player/history', {method:'GET'});
+  if (!r1.ok) { setStatus({step:'history', error:r1.error, raw:r1.raw}); return; }
   renderMy(r1.history);
 
-  // пробуем админские — ошибки просто показываем в статусе
-  const r2 = await api('/api/admin/queue');
-  if (r2.ok) renderQueue(r2); else setStatus({step:'queue', error:r2.error});
+  const r2 = await api('/api/admin/queue', {method:'GET'});
+  if (r2.ok) renderQueue(r2); else setStatus({step:'queue', error:r2.error, raw:r2.raw});
 
-  const r3 = await api('/api/admin/summary');
-  if (r3.ok) renderSummary(r3); else setStatus({step:'summary', error:r3.error});
+  const r3 = await api('/api/admin/summary', {method:'GET'});
+  if (r3.ok) renderSummary(r3); else setStatus({step:'summary', error:r3.error, raw:r3.raw});
 
-  const r4 = await api('/api/admin/history');
-  if (r4.ok) renderAll(r4); else setStatus({step:'all', error:r4.error});
+  const r4 = await api('/api/admin/history', {method:'GET'});
+  if (r4.ok) renderAll(r4); else setStatus({step:'all', error:r4.error, raw:r4.raw});
 }
 
 startBtn.onclick = async () => {
   setStatus({click:'start', sending:true});
-  const r = await api('/api/game/start', {method:'POST'});
+  // ⚠ Старт теперь через GET + query
+  const r = await api('/api/game/start', {method:'GET'});
   setStatus({click:'start', response:r});
   if (!r.ok) {
     alert(r.error || 'Ошибка');
@@ -161,7 +162,6 @@ startBtn.onclick = async () => {
   const myId = tg?.initDataUnsafe?.user?.id?.toString();
   const isAdmin = r.game?.admin_user_id?.toString() === myId;
 
-  // показать интерфейсы
   startBlock.style.display = 'none';
   playerBlock.style.display = '';
   adminBlock.style.display = isAdmin ? '' : 'none';
