@@ -61,36 +61,97 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- Verify Telegram initData (reads from query OR headers OR body) ---
+/** -------- Telegram initData verification (robust) --------
+ * Берём initData в приоритете:
+ * 1) из заголовка X-Tg-Init-Data (если WebView пропускает)
+ * 2) из тела (__initData) для POST
+ * 3) сырым из req.originalUrl (?initData=...) — БЕЗ декодирования
+ * Подпись строим строго по доке Telegram, учитывая, что '+' нужно трактовать как %20 перед decodeURIComponent
+ */
+function extractInitDataRaw(req) {
+  const fromHeader = req.header('X-Tg-Init-Data');
+  if (fromHeader) return fromHeader;
+  const fromBody = req.body?.__initData;
+  if (fromBody) return fromBody;
+
+  // из оригинального URL достаём ровно то, что прислал клиент (percent-encoded)
+  const url = req.originalUrl || '';
+  const m = url.match(/[?&]initData=([^&]+)/);
+  if (m) {
+    // возвращаем ПЕРВЫЙ захваченный параметр без decodeURIComponent
+    return m[1];
+  }
+  return null;
+}
+
+function extractInitDataUnsafeRaw(req) {
+  const fromHeader = req.header('X-Tg-Init-Data-Unsafe');
+  if (fromHeader) return fromHeader;
+  const fromBody = req.body?.__initDataUnsafe;
+  if (fromBody) return fromBody;
+
+  const url = req.originalUrl || '';
+  const m = url.match(/[?&]initDataUnsafe=([^&]+)/);
+  return m ? m[1] : null;
+}
+
+function parseUnsafe(json) {
+  try { return JSON.parse(json ? decodeURIComponent(json) : '{}'); } catch { return {}; }
+}
+
 function checkTelegramInitData(initDataRaw) {
   if (DEV_ALLOW_UNSAFE) return { ok: true, data: {} };
   if (!initDataRaw) return { ok: false, error: 'Missing initData' };
 
-  const params = new URLSearchParams(initDataRaw);
-  const hash = params.get('hash');
+  // initDataRaw — percent-encoded строка "key=value&key=value..."
+  // Разбираем вручную, НЕ декодируя пары целиком (иначе подпись сломается).
+  const pairs = String(initDataRaw).split('&');
+  const items = []; // {k, vDecoded}
+  let hash = null;
+
+  for (const p of pairs) {
+    const eq = p.indexOf('=');
+    if (eq < 0) continue;
+    const k = p.slice(0, eq);
+    const vRaw = p.slice(eq + 1); // percent-encoded, может содержать '+'
+    if (k === 'hash') {
+      // hash — hex, можно декодировать безопасно (но и без этого ок)
+      try { hash = decodeURIComponent(vRaw); } catch { hash = vRaw; }
+      continue;
+    }
+    // Специально заменяем '+' на '%20' перед decodeURIComponent — иначе '+' превращается в пробел и ломает подпись
+    let vDecoded;
+    try {
+      vDecoded = decodeURIComponent(vRaw.replace(/\+/g, '%20'));
+    } catch {
+      vDecoded = vRaw; // в крайнем случае используем как есть
+    }
+    items.push({ k, v: vDecoded });
+  }
+
   if (!hash) return { ok: false, error: 'Missing hash' };
 
-  const items = [];
-  params.forEach((v, k) => { if (k !== 'hash') items.push(`${k}=${v}`); });
-  items.sort();
-  const dataCheckString = items.join('\n');
+  // Строка проверки: ключи по алфавиту, формат "<key>=<value>" с decoded value
+  items.sort((a, b) => a.k.localeCompare(b.k, 'en'));
+  const dataCheckString = items.map(it => `${it.k}=${it.v}`).join('\n');
 
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
   const hmac = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
   const ok = hmac === hash;
-  return { ok, data: Object.fromEntries(params.entries()), error: ok ? null : 'Invalid initData signature' };
+  return { ok, data: Object.fromEntries(items.map(it => [it.k, it.v]).concat([['hash', hash]])), error: ok ? null : 'Invalid initData signature' };
 }
-function parseUnsafe(json) { try { return JSON.parse(json||'{}'); } catch { return {}; } }
 
-// Middleware: attach tg data for API routes only (skip static)
+// Middleware: прикрепляем tg-данные только для /api (статике это не нужно)
 app.use('/api', (req, res, next) => {
-  const initData = req.query.initData || req.header('X-Tg-Init-Data') || req.body?.__initData;
-  const unsafe = req.query.initDataUnsafe || req.header('X-Tg-Init-Data-Unsafe') || req.body?.__initDataUnsafe;
-  const check = checkTelegramInitData(initData);
+  const initDataRaw = extractInitDataRaw(req);
+  const unsafeRaw = extractInitDataUnsafeRaw(req);
+
+  const check = checkTelegramInitData(initDataRaw);
   if (!check.ok) return res.status(401).json({ ok:false, error: check.error });
+
   req.tgInit = check.data;
-  req.tgUnsafe = parseUnsafe(unsafe);
+  req.tgUnsafe = parseUnsafe(unsafeRaw);
   next();
 });
 
@@ -108,7 +169,6 @@ async function tgNotifyUser(user_id, text) {
 }
 
 // --- API ---
-// Старт игры: теперь доступен и по GET, и по POST
 function startGameHandler(req, res) {
   const chat = req.tgUnsafe.chat;
   const user = req.tgUnsafe.user;
