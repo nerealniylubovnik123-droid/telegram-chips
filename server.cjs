@@ -1,4 +1,4 @@
-/* Telegram Chips Game — simplified (no group binding) */
+/* Telegram Chips Game — global mode, always extract user safely */
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -55,7 +55,7 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-/* simplified initData check */
+/* initData parsing */
 function parseInitData(str) {
   if (!str) return {};
   const data = {};
@@ -79,40 +79,46 @@ function verifyInitData(initDataRaw) {
   if (!hash) return { ok: false, error: 'Missing hash' };
   delete data.hash;
 
-  const dataCheckString = Object.entries(data).map(([k, v]) => `${k}=${v}`).join('\n');
+  const dataCheckString = Object.entries(data)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n');
+
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
   const hmac = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
   if (hmac !== hash) return { ok: false, error: 'Invalid initData signature' };
+
   let user = null;
   try { user = JSON.parse(data.user || '{}'); } catch {}
   return { ok: true, user };
 }
 
+/* middleware */
 app.use('/api', (req, res, next) => {
   const initDataRaw = req.body?.__initData;
   const unsafeRaw = req.body?.__initDataUnsafe;
-  const check = verifyInitData(initDataRaw);
-  if (!check.ok) return res.status(401).json({ ok: false, error: check.error });
+  const unsafe = JSON.parse(unsafeRaw || '{}');
 
-  req.tgUser = check.user || {};
-  req.tgUnsafe = JSON.parse(unsafeRaw || '{}');
+  const check = verifyInitData(initDataRaw);
+  // если initData.user нет, берём из unsafe.user
+  const user = check.user || unsafe.user;
+  if (!user?.id) return res.status(401).json({ ok: false, error: 'Missing user.id' });
+
+  req.tgUser = user;
+  req.tgUnsafe = unsafe;
   next();
 });
 
-/* ===== GAME LOGIC (no chat binding) ===== */
-
-// Get active global game (single game mode)
+/* --- helpers --- */
 function getActiveGame() {
   return db.prepare(`SELECT * FROM game WHERE status='active' ORDER BY id DESC LIMIT 1`).get();
 }
 
-/* start or join game */
+/* --- API --- */
 app.post('/api/game/start', (req, res) => {
-  const user = req.tgUser || req.tgUnsafe.user;
-  if (!user?.id) return res.json({ ok: false, error: 'Missing user.id' });
-
+  const user = req.tgUser;
   let game = getActiveGame();
+
   if (!game) {
     const info = db.transaction(() => {
       const r = db.prepare(`INSERT INTO game (admin_user_id) VALUES (?)`)
@@ -133,27 +139,9 @@ app.post('/api/game/start', (req, res) => {
   res.json({ ok: true, game });
 });
 
-/* request chips */
-app.post('/api/player/request', (req, res) => {
-  const user = req.tgUser || req.tgUnsafe.user;
-  const { amount, type } = req.body || {};
-  const game = getActiveGame();
-  if (!game) return res.json({ ok: false, error: 'No active game' });
-
-  const a = parseInt(amount, 10);
-  if (!['request', 'return'].includes(type)) return res.json({ ok: false, error: 'Invalid type' });
-  if (!Number.isInteger(a) || a <= 0) return res.json({ ok: false, error: 'Invalid amount' });
-
-  const txId = db.prepare(`INSERT INTO chip_tx (game_id,user_id,type,amount,status)
-                           VALUES (?,?,?,?, 'pending')`)
-                 .run(game.id, String(user.id), type, a).lastInsertRowid;
-
-  res.json({ ok: true, id: txId });
-});
-
-/* admin summary */
+/* simple summary (for admin) */
 app.get('/api/admin/summary', (req, res) => {
-  const user = req.tgUser || req.tgUnsafe.user;
+  const user = req.tgUser;
   const game = getActiveGame();
   if (!game) return res.json({ ok: false, error: 'No active game' });
   if (String(game.admin_user_id) !== String(user.id))
@@ -174,7 +162,7 @@ app.get('/api/admin/summary', (req, res) => {
 
 /* reset game */
 app.post('/api/admin/end', (req, res) => {
-  const user = req.tgUser || req.tgUnsafe.user;
+  const user = req.tgUser;
   const game = getActiveGame();
   if (!game) return res.json({ ok: false, error: 'No active game' });
   if (String(game.admin_user_id) !== String(user.id))
