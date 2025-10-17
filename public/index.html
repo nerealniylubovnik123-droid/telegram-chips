@@ -23,16 +23,19 @@
     .tab.active{background:#1b2230;border-color:#3a4553}
     .badge{background:#f0ad4e;color:#111;border-radius:999px;padding:2px 8px;font-size:12px;margin-left:6px}
     .row{display:flex;gap:8px}
+    pre#status{white-space:pre-wrap;background:#0b0f14;border:1px dashed #30363d;border-radius:12px;padding:10px;color:#9da7b3;max-height:220px;overflow:auto}
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
     <h1>Игра фишек</h1>
-    <p class="muted">Открывайте мини-апп из группового чата. Вне Telegram сервер отклонит запрос.</p>
+    <p class="muted">Открывайте мини-апп из группового чата. Ниже статус для диагностики.</p>
     <div id="startBlock">
       <button id="startBtn">Начать / Присоединиться</button>
     </div>
+    <div style="height:8px"></div>
+    <pre id="status">Загрузка…</pre>
   </div>
 
   <div class="card" id="playerBlock" style="display:none">
@@ -80,23 +83,34 @@
 const tg = window.Telegram?.WebApp;
 tg?.expand();
 
-// Оригинальные строки Telegram WebApp
+const statusBox = document.getElementById('status');
+function setStatus(obj) {
+  try { statusBox.textContent = (typeof obj === 'string') ? obj : JSON.stringify(obj, null, 2); }
+  catch { statusBox.textContent = String(obj); }
+}
+
+// Пишем стартовые данные от Telegram (важно увидеть chat.id и user.id)
+const info = {
+  hasTG: !!tg,
+  initData_len: (tg?.initData || '').length,
+  user_id: tg?.initDataUnsafe?.user?.id || null,
+  chat_id: tg?.initDataUnsafe?.chat?.id || null,
+  platform: tg?.platform || 'unknown'
+};
+setStatus({boot: info});
+
+// Оригинальные строки от Telegram
 const initData = tg?.initData || '';
 const initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
 
-// Универсальный вызов API:
-// - Всегда ставим заголовки X-Tg-Init-Data / X-Tg-Init-Data-Unsafe
-// - Для POST дополнительно кладём те же значения в тело (__initData), чтобы избежать проблем с кастомными заголовками
+// Универсальный вызов API (headers + для POST дублируем в body)
 async function api(path, opts = {}) {
   const isPost = (opts.method || 'GET').toUpperCase() !== 'GET';
-
   const headers = {
     'Content-Type': 'application/json',
     'X-Tg-Init-Data': initData,
     'X-Tg-Init-Data-Unsafe': initDataUnsafe
   };
-
-  // Тело запроса
   let body = opts.body || undefined;
   if (isPost) {
     const base = body ? JSON.parse(body) : {};
@@ -108,36 +122,57 @@ async function api(path, opts = {}) {
   const res = await fetch(path, { method: opts.method || 'GET', headers, body });
   let data;
   try { data = await res.json(); } catch { data = { ok:false, error:'Bad JSON' }; }
-  if (!data.ok) {
-    alert(data.error || 'Ошибка');
-  }
   return data;
 }
 
+window.onerror = (msg, src, line, col, err) => {
+  setStatus({js_error: String(msg), src, line, col});
+};
+
 const startBtn = document.getElementById('startBtn');
+const startBlock = document.getElementById('startBlock');
 const playerBlock = document.getElementById('playerBlock');
 const adminBlock = document.getElementById('adminBlock');
 
 async function refreshAll() {
-  await Promise.all([loadMy(), loadQueue(), loadSummary(), loadAll()]);
+  const r1 = await api('/api/player/history');
+  if (!r1.ok) { setStatus({step:'history', error:r1.error}); return; }
+  renderMy(r1.history);
+
+  // пробуем админские — ошибки просто показываем в статусе
+  const r2 = await api('/api/admin/queue');
+  if (r2.ok) renderQueue(r2); else setStatus({step:'queue', error:r2.error});
+
+  const r3 = await api('/api/admin/summary');
+  if (r3.ok) renderSummary(r3); else setStatus({step:'summary', error:r3.error});
+
+  const r4 = await api('/api/admin/history');
+  if (r4.ok) renderAll(r4); else setStatus({step:'all', error:r4.error});
 }
 
 startBtn.onclick = async () => {
+  setStatus({click:'start', sending:true});
   const r = await api('/api/game/start', {method:'POST'});
-  if (!r.ok) return; // alert уже показан
+  setStatus({click:'start', response:r});
+  if (!r.ok) {
+    alert(r.error || 'Ошибка');
+    return;
+  }
   const myId = tg?.initDataUnsafe?.user?.id?.toString();
   const isAdmin = r.game?.admin_user_id?.toString() === myId;
-  adminBlock.style.display = isAdmin ? '' : 'none';
+
+  // показать интерфейсы
+  startBlock.style.display = 'none';
   playerBlock.style.display = '';
-  refreshAll();
+  adminBlock.style.display = isAdmin ? '' : 'none';
+
+  await refreshAll();
 };
 
-async function loadMy() {
-  const r = await api('/api/player/history');
-  if (!r.ok) return;
+function renderMy(list){
   const tbody = document.querySelector('#myTable tbody');
   tbody.innerHTML = '';
-  r.history.forEach(item => {
+  (list || []).forEach(item => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${item.type === 'request' ? 'Выдача' : 'Возврат'}</td>
@@ -152,7 +187,7 @@ async function loadMy() {
     btn.onclick = async () => {
       const id = btn.getAttribute('data-id');
       const r = await api('/api/player/request/'+id+'/revoke', {method:'POST'});
-      if (!r.ok) return;
+      if (!r.ok) { alert(r.error || 'Ошибка'); return; }
       await refreshAll();
     };
   });
@@ -162,7 +197,7 @@ document.getElementById('reqBtn').onclick = async () => {
   const val = parseInt(document.getElementById('amountInput').value, 10);
   if (!Number.isInteger(val) || val <= 0) return alert('Введите целое > 0');
   const r = await api('/api/player/request', {method:'POST', body: JSON.stringify({amount: val, type:'request'})});
-  if (!r.ok) return;
+  if (!r.ok) return alert(r.error || 'Ошибка');
   document.getElementById('amountInput').value = '';
   await refreshAll();
 };
@@ -171,7 +206,7 @@ document.getElementById('retBtn').onclick = async () => {
   const val = parseInt(document.getElementById('amountInput').value, 10);
   if (!Number.isInteger(val) || val <= 0) return alert('Введите целое > 0');
   const r = await api('/api/player/request', {method:'POST', body: JSON.stringify({amount: val, type:'return'})});
-  if (!r.ok) return;
+  if (!r.ok) return alert(r.error || 'Ошибка');
   document.getElementById('amountInput').value = '';
   await refreshAll();
 };
@@ -186,12 +221,9 @@ tabs.forEach(t => t.onclick = () => {
   });
 });
 
-async function loadQueue() {
-  const r = await api('/api/admin/queue');
-  if (!r.ok) return;
+function renderQueue(r){
   const badge = document.getElementById('badge');
   if (r.pending_count > 0) { badge.style.display = ''; badge.textContent = r.pending_count; } else { badge.style.display = 'none'; }
-
   const tbody = document.querySelector('#queueTable tbody');
   tbody.innerHTML = '';
   r.queue.forEach(item => {
@@ -212,20 +244,18 @@ async function loadQueue() {
   tbody.querySelectorAll('button.approve').forEach(btn => btn.onclick = async () => {
     const id = btn.getAttribute('data-id');
     const r = await api('/api/admin/request/'+id+'/decide', {method:'POST', body: JSON.stringify({approve: true})});
-    if (!r.ok) return;
+    if (!r.ok) return alert(r.error || 'Ошибка');
     await refreshAll();
   });
   tbody.querySelectorAll('button.reject').forEach(btn => btn.onclick = async () => {
     const id = btn.getAttribute('data-id');
     const r = await api('/api/admin/request/'+id+'/decide', {method:'POST', body: JSON.stringify({approve: false})});
-    if (!r.ok) return;
+    if (!r.ok) return alert(r.error || 'Ошибка');
     await refreshAll();
   });
 }
 
-async function loadSummary() {
-  const r = await api('/api/admin/summary');
-  if (!r.ok) return;
+function renderSummary(r){
   const tbody = document.querySelector('#sumTable tbody');
   tbody.innerHTML = '';
   r.summary.forEach(item => {
@@ -241,9 +271,7 @@ async function loadSummary() {
   });
 }
 
-async function loadAll() {
-  const r = await api('/api/admin/history');
-  if (!r.ok) return;
+function renderAll(r){
   const tbody = document.querySelector('#allTable tbody');
   tbody.innerHTML = '';
   r.history.forEach(item => {
@@ -260,22 +288,6 @@ async function loadAll() {
     tbody.appendChild(tr);
   });
 }
-
-// Settings actions
-document.getElementById('changeAdminBtn').onclick = async () => {
-  const id = document.getElementById('newAdminId').value.trim();
-  if (!id) return alert('Введите user_id');
-  const r = await api('/api/admin/change-admin', {method:'POST', body: JSON.stringify({new_admin_user_id: id})});
-  if (!r.ok) return;
-  alert('Админ сменён');
-  await refreshAll();
-};
-document.getElementById('endGameBtn').onclick = async () => {
-  const r = await api('/api/admin/end-game', {method:'POST'});
-  if (!r.ok) return;
-  alert('Игра завершена');
-  await refreshAll();
-};
 </script>
 </body>
 </html>
