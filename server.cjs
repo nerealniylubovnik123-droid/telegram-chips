@@ -1,4 +1,4 @@
-/* Telegram Chips Game — final working signature fix */
+/* Telegram Chips Game — simplified (no group binding) */
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -22,11 +22,31 @@ db.pragma('journal_mode = WAL');
 db.exec(`
 CREATE TABLE IF NOT EXISTS game (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  chat_id TEXT NOT NULL,
   admin_user_id TEXT,
   status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   ended_at TEXT
+);
+CREATE TABLE IF NOT EXISTS player (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  game_id INTEGER NOT NULL,
+  user_id TEXT NOT NULL,
+  first_name TEXT,
+  username TEXT,
+  joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+  is_admin INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(game_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS chip_tx (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  game_id INTEGER NOT NULL,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+  decided_at TEXT,
+  decided_by TEXT
 );
 `);
 
@@ -35,7 +55,7 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-/* ✅ simplified Telegram initData verification — keep field order as sent */
+/* simplified initData check */
 function parseInitData(str) {
   if (!str) return {};
   const data = {};
@@ -51,34 +71,24 @@ function parseInitData(str) {
 }
 
 function verifyInitData(initDataRaw) {
-  if (DEV_ALLOW_UNSAFE) return { ok: true, user: null, chat: null };
+  if (DEV_ALLOW_UNSAFE) return { ok: true, user: null };
   if (!initDataRaw) return { ok: false, error: 'Missing initData' };
 
   const data = parseInitData(initDataRaw);
   const hash = data.hash;
   if (!hash) return { ok: false, error: 'Missing hash' };
-
   delete data.hash;
 
-  // ⚠️ сохраняем порядок, как пришёл, не сортируем
-  const dataCheckString = Object.entries(data)
-    .map(([k, v]) => `${k}=${v}`)
-    .join('\n');
-
+  const dataCheckString = Object.entries(data).map(([k, v]) => `${k}=${v}`).join('\n');
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
   const hmac = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-  if (hmac !== hash) {
-    return { ok: false, error: 'Invalid initData signature' };
-  }
-
-  let user = null, chat = null;
+  if (hmac !== hash) return { ok: false, error: 'Invalid initData signature' };
+  let user = null;
   try { user = JSON.parse(data.user || '{}'); } catch {}
-  try { chat = JSON.parse(data.chat || '{}'); } catch {}
-  return { ok: true, user, chat };
+  return { ok: true, user };
 }
 
-/* Middleware */
 app.use('/api', (req, res, next) => {
   const initDataRaw = req.body?.__initData;
   const unsafeRaw = req.body?.__initDataUnsafe;
@@ -86,28 +96,92 @@ app.use('/api', (req, res, next) => {
   if (!check.ok) return res.status(401).json({ ok: false, error: check.error });
 
   req.tgUser = check.user || {};
-  req.tgChat = check.chat || {};
   req.tgUnsafe = JSON.parse(unsafeRaw || '{}');
   next();
 });
 
-/* --- Simple Start Handler --- */
+/* ===== GAME LOGIC (no chat binding) ===== */
+
+// Get active global game (single game mode)
+function getActiveGame() {
+  return db.prepare(`SELECT * FROM game WHERE status='active' ORDER BY id DESC LIMIT 1`).get();
+}
+
+/* start or join game */
 app.post('/api/game/start', (req, res) => {
   const user = req.tgUser || req.tgUnsafe.user;
-  const chat = req.tgChat || req.tgUnsafe.chat;
-  if (!chat?.id) return res.json({ ok: false, error: 'Open from group chat' });
   if (!user?.id) return res.json({ ok: false, error: 'Missing user.id' });
 
-  let game = db.prepare(`SELECT * FROM game WHERE chat_id=? AND status='active' ORDER BY id DESC LIMIT 1`).get(String(chat.id));
+  let game = getActiveGame();
   if (!game) {
     const info = db.transaction(() => {
-      const res1 = db.prepare(`INSERT INTO game (chat_id, admin_user_id) VALUES (?, ?)`).run(String(chat.id), String(user.id));
-      return db.prepare(`SELECT * FROM game WHERE id=?`).get(res1.lastInsertRowid);
+      const r = db.prepare(`INSERT INTO game (admin_user_id) VALUES (?)`)
+        .run(String(user.id));
+      const gid = r.lastInsertRowid;
+      db.prepare(`INSERT INTO player (game_id,user_id,first_name,username,is_admin)
+                  VALUES (?,?,?,?,1)`)
+        .run(gid, String(user.id), user.first_name || '', user.username || null);
+      return db.prepare(`SELECT * FROM game WHERE id=?`).get(gid);
     })();
     game = info;
+  } else {
+    db.prepare(`INSERT OR IGNORE INTO player (game_id,user_id,first_name,username,is_admin)
+                VALUES (?,?,?,?,0)`)
+      .run(game.id, String(user.id), user.first_name || '', user.username || null);
   }
 
   res.json({ ok: true, game });
+});
+
+/* request chips */
+app.post('/api/player/request', (req, res) => {
+  const user = req.tgUser || req.tgUnsafe.user;
+  const { amount, type } = req.body || {};
+  const game = getActiveGame();
+  if (!game) return res.json({ ok: false, error: 'No active game' });
+
+  const a = parseInt(amount, 10);
+  if (!['request', 'return'].includes(type)) return res.json({ ok: false, error: 'Invalid type' });
+  if (!Number.isInteger(a) || a <= 0) return res.json({ ok: false, error: 'Invalid amount' });
+
+  const txId = db.prepare(`INSERT INTO chip_tx (game_id,user_id,type,amount,status)
+                           VALUES (?,?,?,?, 'pending')`)
+                 .run(game.id, String(user.id), type, a).lastInsertRowid;
+
+  res.json({ ok: true, id: txId });
+});
+
+/* admin summary */
+app.get('/api/admin/summary', (req, res) => {
+  const user = req.tgUser || req.tgUnsafe.user;
+  const game = getActiveGame();
+  if (!game) return res.json({ ok: false, error: 'No active game' });
+  if (String(game.admin_user_id) !== String(user.id))
+    return res.json({ ok: false, error: 'Only admin can view summary' });
+
+  const rows = db.prepare(`
+    SELECT p.first_name, p.username,
+      COALESCE(SUM(CASE WHEN t.type='request' AND t.status='approved' THEN t.amount ELSE 0 END),0) AS issued,
+      COALESCE(SUM(CASE WHEN t.type='return'  AND t.status='approved' THEN t.amount ELSE 0 END),0) AS returned
+    FROM player p
+    LEFT JOIN chip_tx t ON t.user_id=p.user_id AND t.game_id=p.game_id
+    WHERE p.game_id=?
+    GROUP BY p.user_id
+  `).all(game.id);
+
+  res.json({ ok: true, summary: rows.map(r => ({ ...r, diff: r.issued - r.returned })) });
+});
+
+/* reset game */
+app.post('/api/admin/end', (req, res) => {
+  const user = req.tgUser || req.tgUnsafe.user;
+  const game = getActiveGame();
+  if (!game) return res.json({ ok: false, error: 'No active game' });
+  if (String(game.admin_user_id) !== String(user.id))
+    return res.json({ ok: false, error: 'Only admin can end the game' });
+
+  db.prepare(`UPDATE game SET status='ended', ended_at=datetime('now') WHERE id=?`).run(game.id);
+  res.json({ ok: true });
 });
 
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
