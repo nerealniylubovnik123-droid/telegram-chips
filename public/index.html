@@ -11,12 +11,17 @@
     input {padding:8px;border-radius:8px;border:1px solid #30363d;background:#161b22;color:#e6edf3;width:100%;box-sizing:border-box;}
     .card {background:#161b22;padding:16px;border-radius:12px;margin:10px 0;}
     h2 {margin:8px 0;}
-    pre {background:#0b0f14;padding:8px;border-radius:8px;white-space:pre-wrap;font-size:13px;}
     .hidden {display:none;}
+    .req {padding:8px;margin:6px 0;border-radius:8px;background:#20262f;}
+    .req.pending {border:1px solid #2f81f7;}
+    .req.approved {border:1px solid #238636;}
+    .req.rejected {border:1px solid #b62324;}
+    .req-btns button{margin-right:6px;}
   </style>
 </head>
 <body>
   <h1>🎲 Chips Game</h1>
+
   <div id="screenStart">
     <button id="btnStart">Начать / Присоединиться</button>
   </div>
@@ -30,10 +35,10 @@
   <div id="screenAdmin" class="hidden">
     <h2>Администратор</h2>
     <div class="card">
-      <button id="btnSummary">Общая сводка</button>
-      <button id="btnEnd">Закончить игру</button>
+      <button id="btnRefresh">🔄 Обновить запросы</button>
+      <button id="btnEnd">🛑 Закончить игру</button>
     </div>
-    <pre id="adminOut"></pre>
+    <div id="reqList"></div>
   </div>
 
   <div id="screenPlayer" class="hidden">
@@ -43,68 +48,91 @@
       <button id="btnReq">Запросить фишки</button>
       <button id="btnReturn">Вернуть фишки</button>
     </div>
-    <pre id="playerOut"></pre>
+    <div id="playerOut"></div>
   </div>
 
   <script>
     const tg = window.Telegram?.WebApp;
     tg?.expand();
 
-    const $ = (id) => document.getElementById(id);
-    const log = (el, obj) => el.textContent = typeof obj==='string'?obj:JSON.stringify(obj,null,2);
-
-    const initData = tg?.initData || "";
-    const initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
-
-    async function api(path, bodyObj={}) {
-      bodyObj.__initData = initData;
-      bodyObj.__initDataUnsafe = initDataUnsafe;
+    const $ = id => document.getElementById(id);
+    const api = async (path, bodyObj={})=>{
+      bodyObj.__initData = tg?.initData || "";
+      bodyObj.__initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
       const res = await fetch(path, {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(bodyObj)
       });
       return await res.json();
-    }
+    };
 
-    let currentRole = null;
-
+    // --- Navigation ---
     $('btnStart').onclick = async ()=>{
       const r = await api('/api/game/start');
-      if(r.ok){
-        $('screenStart').classList.add('hidden');
-        $('screenRole').classList.remove('hidden');
-      } else alert(r.error);
+      if(r.ok){$('screenStart').classList.add('hidden');$('screenRole').classList.remove('hidden');}
+      else alert(r.error);
     };
 
-    $('asAdmin').onclick = ()=>{currentRole='admin';$('screenRole').classList.add('hidden');$('screenAdmin').classList.remove('hidden');};
-    $('asPlayer').onclick = ()=>{currentRole='player';$('screenRole').classList.add('hidden');$('screenPlayer').classList.remove('hidden');};
+    $('asAdmin').onclick = ()=>{$('screenRole').classList.add('hidden');$('screenAdmin').classList.remove('hidden');loadRequests();};
+    $('asPlayer').onclick = ()=>{$('screenRole').classList.add('hidden');$('screenPlayer').classList.remove('hidden');};
 
-    // --- ADMIN ACTIONS ---
-    $('btnSummary').onclick = async ()=>{
-      const r = await fetch('/api/admin/summary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({__initData:initData,__initDataUnsafe:initDataUnsafe})});
-      const j = await r.json();
-      log($('adminOut'), j);
-    };
-
-    $('btnEnd').onclick = async ()=>{
-      const r = await api('/api/admin/end');
-      log($('adminOut'), r);
-    };
-
-    // --- PLAYER ACTIONS ---
+    // --- Player actions ---
     $('btnReq').onclick = async ()=>{
       const amt = parseInt($('chipsInput').value||'0');
       if(amt<=0)return alert('Введите число >0');
       const r = await api('/api/player/request',{amount:amt,type:'request'});
-      log($('playerOut'), r);
+      $('playerOut').innerHTML = r.ok ? "Запрос отправлен ✅" : r.error;
     };
     $('btnReturn').onclick = async ()=>{
       const amt = parseInt($('chipsInput').value||'0');
       if(amt<=0)return alert('Введите число >0');
       const r = await api('/api/player/request',{amount:amt,type:'return'});
-      log($('playerOut'), r);
+      $('playerOut').innerHTML = r.ok ? "Возврат отправлен ♻️" : r.error;
     };
+
+    // --- Admin actions ---
+    async function loadRequests(){
+      const res = await fetch('/api/admin/pending',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          __initData: tg?.initData || "",
+          __initDataUnsafe: JSON.stringify(tg?.initDataUnsafe || {})
+        })
+      });
+      const data = await res.json();
+      const div = $('reqList');
+      div.innerHTML='';
+      if(!data.ok){div.innerText=data.error;return;}
+      if(data.requests.length===0){div.innerHTML='<i>Нет активных запросов</i>';return;}
+      data.requests.forEach(r=>{
+        const el=document.createElement('div');
+        el.className='req '+r.status;
+        el.innerHTML=`<b>${r.first_name||'Игрок'} ${r.username?('@'+r.username):''}</b><br>
+        ${r.type==='request'?'Просит':'Возвращает'} ${r.amount} фишек<br>
+        <small>${r.status}</small>
+        <div class="req-btns">
+          <button onclick="decide(${r.id},'approved')">✅ Одобрить</button>
+          <button onclick="decide(${r.id},'rejected')">❌ Отклонить</button>
+        </div>`;
+        div.appendChild(el);
+      });
+    }
+
+    async function decide(id, status){
+      const r = await api('/api/admin/decide',{id,status});
+      if(r.ok) loadRequests();
+      else alert(r.error);
+    }
+
+    $('btnRefresh').onclick = loadRequests;
+    $('btnEnd').onclick = async ()=>{
+      const r = await api('/api/admin/end');
+      alert(r.ok?'Игра завершена':'Ошибка: '+r.error);
+    };
+
+    // автообновление каждые 5 секунд
+    setInterval(()=>{if(!$('screenAdmin').classList.contains('hidden'))loadRequests();},5000);
   </script>
 </body>
 </html>
