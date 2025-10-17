@@ -10,7 +10,7 @@
     button {background:#2f81f7;border:none;padding:10px 14px;border-radius:10px;color:#fff;font-weight:600;cursor:pointer;margin:4px 0;}
     button.secondary{background:#30363d}
     input,select {padding:8px;border-radius:8px;border:1px solid #30363d;background:#161b22;color:#e6edf3;width:100%;box-sizing:border-box;}
-    .row{display:flex;gap:8px;align-items:center}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .card {background:#161b22;padding:16px;border-radius:12px;margin:10px 0;}
     h2 {margin:8px 0;}
     .hidden {display:none;}
@@ -91,6 +91,7 @@
     const $ = id => document.getElementById(id);
     const initData = tg?.initData || "";
     const initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
+    const userId = tg?.initDataUnsafe?.user?.id || tg?.initDataUnsafe?.user_id;
     const bodyWithAuth = (extra={}) => JSON.stringify(Object.assign({}, extra, {__initData:initData,__initDataUnsafe:initDataUnsafe}));
 
     async function post(path, payloadObj={}) {
@@ -102,29 +103,39 @@
       return await res.json();
     }
 
+    let currentRole = null;
+    let adminUserId = null;
+
     // ---- Навигация
     $('btnStart').onclick = async ()=>{
       const r = await post('/api/game/start');
-      if(r.ok){ $('screenStart').classList.add('hidden'); $('screenRole').classList.remove('hidden'); }
+      if(r.ok){ 
+        $('screenStart').classList.add('hidden');
+        $('screenRole').classList.remove('hidden'); 
+        adminUserId = r.game.admin_user_id;
+      }
       else alert(r.error);
     };
 
-    $('asAdmin').onclick = ()=>{
-      $('screenRole').classList.add('hidden');
-      $('screenAdmin').classList.remove('hidden');
-      loadPending(); // заявки
-      loadPlayers(); // список игроков
-      startAdminPolling();
-    };
+    $('asAdmin').onclick = ()=>switchRole('admin');
+    $('asPlayer').onclick = ()=>switchRole('player');
 
-    $('asPlayer').onclick = ()=>{
+    function switchRole(role){
+      currentRole = role;
       $('screenRole').classList.add('hidden');
-      $('screenPlayer').classList.remove('hidden');
-      loadMyHistory();
-      startPlayerPolling();
-    };
+      $('screenAdmin').classList.toggle('hidden', role!=='admin');
+      $('screenPlayer').classList.toggle('hidden', role!=='player');
+      if(role==='admin'){
+        loadPending(); 
+        loadPlayers(); 
+        startAdminPolling();
+      } else {
+        loadMyHistory(); 
+        startPlayerPolling();
+      }
+    }
 
-    // ---- Игрок: запрос/возврат и история
+    // ---- Игрок
     $('btnReq').onclick = async ()=>{
       const amt = parseInt(($('chipsInput').value||'0'), 10);
       if(amt<=0) return alert('Введите число > 0');
@@ -149,12 +160,12 @@
       if(!r.history || r.history.length===0){ box.innerHTML = '<i>Нет заявок</i>'; return; }
       for(const item of r.history){
         const div=document.createElement('div');
-        div.innerHTML = `<b>${item.type==='request'?'Запрос':'Возврат'}</b> · ${item.amount} · <b>${item.status}</b> · <small>${item.requested_at}${item.decided_at?(' → '+item.decided_at):''}</small>`;
+        div.innerHTML = `<b>${item.type==='request'?'Запрос':'Возврат'}</b> · ${item.amount} · <b>${item.status}</b>`;
         box.appendChild(div);
       }
     }
 
-    // ---- Админ: собственные запросы как у игрока
+    // ---- Админ
     $('adminReqBtn').onclick = async ()=>{
       const amt = parseInt(($('adminAmount').value||'0'), 10);
       if(amt<=0) return alert('Введите число > 0');
@@ -170,8 +181,25 @@
       loadPending();
     };
 
-    // ---- Админ: заявки (pending)
     $('btnRefresh').onclick = loadPending;
+    $('btnPlayers').onclick = ()=>{
+      $('adminSectionPlayers').classList.toggle('hidden');
+      if(!$('adminSectionPlayers').classList.contains('hidden')) loadPlayers();
+    };
+    $('btnEnd').onclick = async ()=>{
+      const r = await post('/api/admin/end');
+      alert(r.ok ? 'Игра завершена' : ('Ошибка: '+r.error));
+    };
+    $('btnChangeAdmin').onclick = async ()=>{
+      const val = $('newAdminSelect').value;
+      if(!val) return;
+      const r = await post('/api/admin/change', { new_admin_user_id: val });
+      if(!r.ok) alert(r.error);
+      else {
+        adminUserId = val;
+        alert('✅ Админ изменён');
+      }
+    };
 
     async function loadPending(){
       const r = await post('/api/admin/pending');
@@ -180,11 +208,7 @@
       list.innerHTML = '';
       if(!r.ok){ list.textContent = r.error; badge.style.display='none'; return; }
       const items = r.requests || [];
-      if(items.length===0){
-        list.innerHTML = '<i>Нет активных заявок</i>';
-        badge.style.display='none';
-        return;
-      }
+      if(items.length===0){ list.innerHTML = '<i>Нет активных заявок</i>'; badge.style.display='none'; return; }
       badge.textContent = items.length; badge.style.display='';
       for(const it of items){
         const el = document.createElement('div');
@@ -204,24 +228,10 @@
           const r = await post('/api/admin/decide', {id, status});
           if(!r.ok) alert(r.error);
           loadPending();
-          // обновим позади ещё и списки
           loadPlayers();
         };
       });
     }
-
-    // ---- Админ: список игроков с суммами и смена админа
-    $('btnPlayers').onclick = ()=>{
-      $('adminSectionPlayers').classList.toggle('hidden');
-      if(!$('adminSectionPlayers').classList.contains('hidden')) loadPlayers();
-    };
-
-    $('btnChangeAdmin').onclick = async ()=>{
-      const val = $('newAdminSelect').value;
-      if(!val) return;
-      const r = await post('/api/admin/change', { new_admin_user_id: val });
-      if(!r.ok) alert(r.error); else alert('Админ изменён');
-    };
 
     async function loadPlayers(){
       const r = await post('/api/admin/players');
@@ -243,21 +253,38 @@
       }
     }
 
-    // ---- Админ: завершить игру
-    $('btnEnd').onclick = async ()=>{
-      const r = await post('/api/admin/end');
-      alert(r.ok ? 'Игра завершена' : ('Ошибка: '+r.error));
-    };
-
     // ---- автообновление
-    let playerTimer = null, adminTimer = null;
+    async function checkRoleChange(){
+      const r = await post('/api/game/start'); // возвращает текущее состояние игры
+      if(r.ok && r.game){
+        if(adminUserId !== r.game.admin_user_id){
+          adminUserId = r.game.admin_user_id;
+          const isNowAdmin = String(adminUserId) === String(tg?.initDataUnsafe?.user?.id);
+          if(isNowAdmin && currentRole !== 'admin'){
+            alert('Вы стали новым админом');
+            switchRole('admin');
+          } else if(!isNowAdmin && currentRole === 'admin'){
+            alert('Админ изменён, вы больше не админ');
+            switchRole('player');
+          }
+        }
+      }
+    }
+
+    let playerTimer = null, adminTimer = null, roleTimer = null;
     function startPlayerPolling(){
-      if(playerTimer) clearInterval(playerTimer);
+      clearAllTimers();
       playerTimer = setInterval(loadMyHistory, 5000);
+      roleTimer = setInterval(checkRoleChange, 5000);
     }
     function startAdminPolling(){
+      clearAllTimers();
+      adminTimer = setInterval(()=>{ loadPending(); checkRoleChange(); }, 5000);
+    }
+    function clearAllTimers(){
+      if(playerTimer) clearInterval(playerTimer);
       if(adminTimer) clearInterval(adminTimer);
-      adminTimer = setInterval(()=>{ loadPending(); }, 5000);
+      if(roleTimer) clearInterval(roleTimer);
     }
   </script>
 </body>
