@@ -29,7 +29,7 @@
 <div class="wrap">
   <div class="card">
     <h1>Игра фишек</h1>
-    <p class="muted">Стартуйте в групповом чате через кнопку «Открыть мини‑апп».</p>
+    <p class="muted">Стартуйте в групповом чате через кнопку «Открыть мини-апп». Если открыто вне Telegram — сервер отклонит запрос.</p>
     <div id="startBlock">
       <button id="startBtn">Начать / Присоединиться</button>
     </div>
@@ -83,14 +83,24 @@ tg?.expand();
 let initData = tg?.initData || '';
 let initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
 
-async function api(path, opts={}) {
-  opts.headers = Object.assign({}, opts.headers || {}, {
-    'Content-Type': 'application/json',
-    'X-Tg-Init-Data': initData,
-    'X-Tg-Init-Data-Unsafe': initDataUnsafe
+// ✅ ПЕРЕДАЁМ initData ЧЕРЕЗ QUERY-ПАРАМЕТРЫ (а не заголовки)
+async function api(path, opts = {}) {
+  const url = new URL(path, window.location.origin);
+  if (initData) url.searchParams.set('initData', initData);
+  if (initDataUnsafe) url.searchParams.set('initDataUnsafe', initDataUnsafe);
+
+  const res = await fetch(url.toString(), {
+    method: opts.method || 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    body: opts.body || undefined,
   });
-  const res = await fetch(path, opts);
-  return res.json();
+
+  let data;
+  try { data = await res.json(); } catch { data = { ok:false, error:'Bad JSON' }; }
+  if (!data.ok) {
+    alert(data.error || 'Ошибка');
+  }
+  return data;
 }
 
 const startBtn = document.getElementById('startBtn');
@@ -103,38 +113,35 @@ async function refreshAll() {
 
 startBtn.onclick = async () => {
   const r = await api('/api/game/start', {method:'POST'});
-  if (!r.ok) return alert(r.error || 'Ошибка старта');
-
+  if (!r.ok) return; // alert уже показан внутри api()
   const myId = tg?.initDataUnsafe?.user?.id?.toString();
   const isAdmin = r.game?.admin_user_id?.toString() === myId;
   adminBlock.style.display = isAdmin ? '' : 'none';
   playerBlock.style.display = '';
-
   refreshAll();
 };
 
 async function loadMy() {
   const r = await api('/api/player/history');
   if (!r.ok) return;
-
   const tbody = document.querySelector('#myTable tbody');
   tbody.innerHTML = '';
   r.history.forEach(item => {
     const tr = document.createElement('tr');
-    tr.innerHTML = \`
-      <td>\${item.type === 'request' ? 'Выдача' : 'Возврат'}</td>
-      <td>\${item.amount}</td>
-      <td>\${item.status}</td>
-      <td>\${item.requested_at}</td>
-      <td>\${item.status === 'pending' ? '<button data-id="'+item.id+'" class="revoke">Отозвать</button>' : ''}</td>
-    \`;
+    tr.innerHTML = `
+      <td>${item.type === 'request' ? 'Выдача' : 'Возврат'}</td>
+      <td>${item.amount}</td>
+      <td>${item.status}</td>
+      <td>${item.requested_at}</td>
+      <td>${item.status === 'pending' ? '<button data-id="'+item.id+'" class="revoke">Отозвать</button>' : ''}</td>
+    `;
     tbody.appendChild(tr);
   });
   tbody.querySelectorAll('button.revoke').forEach(btn => {
     btn.onclick = async () => {
       const id = btn.getAttribute('data-id');
       const r = await api('/api/player/request/'+id+'/revoke', {method:'POST'});
-      if (!r.ok) alert(r.error || 'Ошибка');
+      if (!r.ok) return;
       await refreshAll();
     };
   });
@@ -144,7 +151,7 @@ document.getElementById('reqBtn').onclick = async () => {
   const val = parseInt(document.getElementById('amountInput').value, 10);
   if (!Number.isInteger(val) || val <= 0) return alert('Введите целое > 0');
   const r = await api('/api/player/request', {method:'POST', body: JSON.stringify({amount: val, type:'request'})});
-  if (!r.ok) return alert(r.error || 'Ошибка');
+  if (!r.ok) return;
   document.getElementById('amountInput').value = '';
   await refreshAll();
 };
@@ -153,12 +160,12 @@ document.getElementById('retBtn').onclick = async () => {
   const val = parseInt(document.getElementById('amountInput').value, 10);
   if (!Number.isInteger(val) || val <= 0) return alert('Введите целое > 0');
   const r = await api('/api/player/request', {method:'POST', body: JSON.stringify({amount: val, type:'return'})});
-  if (!r.ok) return alert(r.error || 'Ошибка');
+  if (!r.ok) return;
   document.getElementById('amountInput').value = '';
   await refreshAll();
 };
 
-// Tabs logic
+// Tabs
 const tabs = document.querySelectorAll('.tab');
 tabs.forEach(t => t.onclick = () => {
   tabs.forEach(x => x.classList.remove('active'));
@@ -179,28 +186,28 @@ async function loadQueue() {
   r.queue.forEach(item => {
     const who = (item.first_name || 'Игрок') + (item.username ? ' @' + item.username : '');
     const tr = document.createElement('tr');
-    tr.innerHTML = \`
-      <td>\${who}</td>
-      <td>\${item.type === 'request' ? 'Выдача' : 'Возврат'}</td>
-      <td>\${item.amount}</td>
-      <td>\${item.requested_at}</td>
+    tr.innerHTML = `
+      <td>${who}</td>
+      <td>${item.type === 'request' ? 'Выдача' : 'Возврат'}</td>
+      <td>${item.amount}</td>
+      <td>${item.requested_at}</td>
       <td>
-        <button class="approve" data-id="\${item.id}">Одобрить</button>
-        <button class="reject secondary" data-id="\${item.id}">Отклонить</button>
+        <button class="approve" data-id="${item.id}">Одобрить</button>
+        <button class="reject secondary" data-id="${item.id}">Отклонить</button>
       </td>
-    \`;
+    `;
     tbody.appendChild(tr);
   });
   tbody.querySelectorAll('button.approve').forEach(btn => btn.onclick = async () => {
     const id = btn.getAttribute('data-id');
     const r = await api('/api/admin/request/'+id+'/decide', {method:'POST', body: JSON.stringify({approve: true})});
-    if (!r.ok) alert(r.error || 'Ошибка');
+    if (!r.ok) return;
     await refreshAll();
   });
   tbody.querySelectorAll('button.reject').forEach(btn => btn.onclick = async () => {
     const id = btn.getAttribute('data-id');
     const r = await api('/api/admin/request/'+id+'/decide', {method:'POST', body: JSON.stringify({approve: false})});
-    if (!r.ok) alert(r.error || 'Ошибка');
+    if (!r.ok) return;
     await refreshAll();
   });
 }
@@ -213,12 +220,12 @@ async function loadSummary() {
   r.summary.forEach(item => {
     const who = (item.first_name || 'Игрок') + (item.username ? ' @' + item.username : '');
     const tr = document.createElement('tr');
-    tr.innerHTML = \`
-      <td>\${who}</td>
-      <td>\${item.issued}</td>
-      <td>\${item.returned}</td>
-      <td>\${item.diff}</td>
-    \`;
+    tr.innerHTML = `
+      <td>${who}</td>
+      <td>${item.issued}</td>
+      <td>${item.returned}</td>
+      <td>${item.diff}</td>
+    `;
     tbody.appendChild(tr);
   });
 }
@@ -231,14 +238,14 @@ async function loadAll() {
   r.history.forEach(item => {
     const who = (item.first_name || 'Игрок') + (item.username ? ' @' + item.username : '');
     const tr = document.createElement('tr');
-    tr.innerHTML = \`
-      <td>\${who}</td>
-      <td>\${item.type === 'request' ? 'Выдача' : 'Возврат'}</td>
-      <td>\${item.amount}</td>
-      <td>\${item.status}</td>
-      <td>\${item.requested_at}</td>
-      <td>\${item.decided_at || ''}</td>
-    \`;
+    tr.innerHTML = `
+      <td>${who}</td>
+      <td>${item.type === 'request' ? 'Выдача' : 'Возврат'}</td>
+      <td>${item.amount}</td>
+      <td>${item.status}</td>
+      <td>${item.requested_at}</td>
+      <td>${item.decided_at || ''}</td>
+    `;
     tbody.appendChild(tr);
   });
 }
@@ -248,15 +255,16 @@ document.getElementById('changeAdminBtn').onclick = async () => {
   const id = document.getElementById('newAdminId').value.trim();
   if (!id) return alert('Введите user_id');
   const r = await api('/api/admin/change-admin', {method:'POST', body: JSON.stringify({new_admin_user_id: id})});
-  if (!r.ok) alert(r.error || 'Ошибка'); else alert('Админ сменён');
+  if (!r.ok) return;
+  alert('Админ сменён');
   await refreshAll();
 };
 document.getElementById('endGameBtn').onclick = async () => {
   const r = await api('/api/admin/end-game', {method:'POST'});
-  if (!r.ok) alert(r.error || 'Ошибка'); else alert('Игра завершена');
+  if (!r.ok) return;
+  alert('Игра завершена');
   await refreshAll();
 };
-
 </script>
 </body>
 </html>
