@@ -1,4 +1,4 @@
-/* Telegram Chips Game — full version with in-app admin panel */
+/* Telegram Chips Game — full features: player history, admin requests, players summary, change admin */
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -17,6 +17,7 @@ if (!BOT_TOKEN) {
   process.exit(1);
 }
 
+/* ---------- DB ---------- */
 const db = new Database(SQLITE_PATH);
 db.pragma('journal_mode = WAL');
 db.exec(`
@@ -41,9 +42,9 @@ CREATE TABLE IF NOT EXISTS chip_tx (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   game_id INTEGER NOT NULL,
   user_id TEXT NOT NULL,
-  type TEXT NOT NULL,
+  type TEXT NOT NULL,        -- 'request' | 'return'
   amount INTEGER NOT NULL,
-  status TEXT NOT NULL,
+  status TEXT NOT NULL,      -- 'pending' | 'approved' | 'rejected' | 'revoked'
   requested_at TEXT NOT NULL DEFAULT (datetime('now')),
   decided_at TEXT,
   decided_by TEXT
@@ -55,12 +56,11 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-/* Parse + verify Telegram initData */
+/* ---------- Telegram initData: parse & verify ---------- */
 function parseInitData(str) {
   if (!str) return {};
   const data = {};
-  const pairs = String(str).split('&');
-  for (const p of pairs) {
+  for (const p of String(str).split('&')) {
     const eq = p.indexOf('=');
     if (eq < 0) continue;
     const k = p.slice(0, eq);
@@ -73,16 +73,13 @@ function parseInitData(str) {
 function verifyInitData(initDataRaw) {
   if (DEV_ALLOW_UNSAFE) return { ok: true, user: null };
   if (!initDataRaw) return { ok: false, error: 'Missing initData' };
-
   const data = parseInitData(initDataRaw);
   const hash = data.hash;
   if (!hash) return { ok: false, error: 'Missing hash' };
   delete data.hash;
 
-  const dataCheckString = Object.entries(data)
-    .map(([k, v]) => `${k}=${v}`)
-    .join('\n');
-
+  // Сохраняем порядок, как пришло — практика для WebApps
+  const dataCheckString = Object.entries(data).map(([k, v]) => `${k}=${v}`).join('\n');
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
   const hmac = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
   if (hmac !== hash) return { ok: false, error: 'Invalid initData signature' };
@@ -92,7 +89,7 @@ function verifyInitData(initDataRaw) {
   return { ok: true, user };
 }
 
-/* Middleware */
+/* ---------- Middleware ---------- */
 app.use('/api', (req, res, next) => {
   const initDataRaw = req.body?.__initData;
   const unsafeRaw = req.body?.__initDataUnsafe;
@@ -107,14 +104,26 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-/* Helpers */
+/* ---------- Helpers ---------- */
 function getActiveGame() {
   return db.prepare(`SELECT * FROM game WHERE status='active' ORDER BY id DESC LIMIT 1`).get();
 }
 
-/* === GAME LOGIC === */
+async function notifyTelegram(userId, text) {
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: userId, text })
+    });
+  } catch (e) {
+    console.error('notifyTelegram error:', e.message);
+  }
+}
 
-/* 1️⃣ Start or join game */
+/* ---------- API ---------- */
+
+/* 1) Start / join game (глобальный режим, без привязки к чату) */
 app.post('/api/game/start', (req, res) => {
   const user = req.tgUser;
   let game = getActiveGame();
@@ -134,11 +143,10 @@ app.post('/api/game/start', (req, res) => {
                 VALUES (?,?,?,?,0)`)
       .run(game.id, String(user.id), user.first_name || '', user.username || null);
   }
-
   res.json({ ok: true, game });
 });
 
-/* 2️⃣ Player makes a chip request or return */
+/* 2) Player request/return chips (админ тоже может пользоваться) */
 app.post('/api/player/request', (req, res) => {
   const user = req.tgUser;
   const { amount, type } = req.body || {};
@@ -153,10 +161,33 @@ app.post('/api/player/request', (req, res) => {
               VALUES (?,?,?,?, 'pending')`)
     .run(game.id, String(user.id), type, a);
 
+  // (опционально) пуш в телеграм-чат админу — оставим включённым
+  const who = `${user.first_name || 'Игрок'}${user.username ? ' @' + user.username : ''}`;
+  const msg = type === 'request'
+    ? `💰 ${who} просит ${a} фишек`
+    : `♻️ ${who} возвращает ${a} фишек`;
+  if (game.admin_user_id) notifyTelegram(game.admin_user_id, msg);
+
   res.json({ ok: true, message: 'Request created' });
 });
 
-/* 3️⃣ Admin sees pending requests */
+/* 3) Player history — история заявок текущего пользователя */
+app.post('/api/player/history', (req, res) => {
+  const user = req.tgUser;
+  const game = getActiveGame();
+  if (!game) return res.json({ ok: true, history: [] });
+
+  const rows = db.prepare(`
+    SELECT id, type, amount, status, requested_at, decided_at
+    FROM chip_tx
+    WHERE game_id = ? AND user_id = ?
+    ORDER BY id DESC
+  `).all(game.id, String(user.id));
+
+  res.json({ ok: true, history: rows });
+});
+
+/* 4) Admin: pending requests list (для внутренних «уведомлений») */
 app.post('/api/admin/pending', (req, res) => {
   const user = req.tgUser;
   const game = getActiveGame();
@@ -174,49 +205,72 @@ app.post('/api/admin/pending', (req, res) => {
   res.json({ ok: true, requests: rows });
 });
 
-/* 4️⃣ Admin approves or rejects */
+/* 5) Admin: approve/reject request */
 app.post('/api/admin/decide', (req, res) => {
   const user = req.tgUser;
   const { id, status } = req.body || {};
+  if (!['approved', 'rejected'].includes(status)) return res.json({ ok: false, error: 'Bad status' });
+
   const game = getActiveGame();
   if (!game) return res.json({ ok: false, error: 'No active game' });
   if (String(game.admin_user_id) !== String(user.id))
     return res.json({ ok: false, error: 'Not admin' });
-  if (!['approved', 'rejected'].includes(status))
-    return res.json({ ok: false, error: 'Bad status' });
 
   const tx = db.prepare(`SELECT * FROM chip_tx WHERE id=? AND game_id=?`).get(id, game.id);
   if (!tx) return res.json({ ok: false, error: 'No such tx' });
   if (tx.status !== 'pending') return res.json({ ok: false, error: 'Already decided' });
 
-  db.prepare(`UPDATE chip_tx SET status=?,decided_at=datetime('now'),decided_by=? WHERE id=?`)
+  db.prepare(`UPDATE chip_tx SET status=?, decided_at=datetime('now'), decided_by=? WHERE id=?`)
     .run(status, String(user.id), id);
 
+  // Если это возврат и одобрен — по твоей логике можно было бы завершать игру; в глобальном режиме не делаем авто-завершение.
   res.json({ ok: true });
 });
 
-/* 5️⃣ Admin summary */
-app.post('/api/admin/summary', (req, res) => {
+/* 6) Admin: players summary — список игроков и кто сколько «покупал» (+ возвраты) */
+app.post('/api/admin/players', (req, res) => {
   const user = req.tgUser;
   const game = getActiveGame();
   if (!game) return res.json({ ok: false, error: 'No active game' });
   if (String(game.admin_user_id) !== String(user.id))
-    return res.json({ ok: false, error: 'Only admin can view summary' });
+    return res.json({ ok: false, error: 'Not admin' });
 
   const rows = db.prepare(`
-    SELECT p.first_name,p.username,
+    SELECT p.user_id, p.first_name, p.username,
       COALESCE(SUM(CASE WHEN t.type='request' AND t.status='approved' THEN t.amount ELSE 0 END),0) AS issued,
       COALESCE(SUM(CASE WHEN t.type='return'  AND t.status='approved' THEN t.amount ELSE 0 END),0) AS returned
     FROM player p
-    LEFT JOIN chip_tx t ON t.user_id=p.user_id AND t.game_id=p.game_id
-    WHERE p.game_id=?
-    GROUP BY p.user_id
+    LEFT JOIN chip_tx t ON t.user_id = p.user_id AND t.game_id = p.game_id
+    WHERE p.game_id = ?
+    GROUP BY p.user_id, p.first_name, p.username
+    ORDER BY (issued - returned) DESC, p.first_name ASC
   `).all(game.id);
 
-  res.json({ ok: true, summary: rows.map(r => ({ ...r, diff: r.issued - r.returned })) });
+  res.json({ ok: true, players: rows.map(r => ({ ...r, diff: r.issued - r.returned })) });
 });
 
-/* 6️⃣ End game */
+/* 7) Admin: change admin to another player */
+app.post('/api/admin/change', (req, res) => {
+  const user = req.tgUser;
+  const { new_admin_user_id } = req.body || {};
+  const game = getActiveGame();
+  if (!game) return res.json({ ok: false, error: 'No active game' });
+  if (String(game.admin_user_id) !== String(user.id))
+    return res.json({ ok: false, error: 'Not admin' });
+
+  const target = db.prepare(`SELECT * FROM player WHERE game_id=? AND user_id=?`).get(game.id, String(new_admin_user_id));
+  if (!target) return res.json({ ok: false, error: 'Target user is not a player of this game' });
+
+  db.transaction(() => {
+    db.prepare(`UPDATE game SET admin_user_id=? WHERE id=?`).run(String(new_admin_user_id), game.id);
+    db.prepare(`UPDATE player SET is_admin=CASE WHEN user_id=? THEN 1 ELSE 0 END WHERE game_id=?`)
+      .run(String(new_admin_user_id), game.id);
+  })();
+
+  res.json({ ok: true });
+});
+
+/* 8) Admin: end game (ручное завершение) */
 app.post('/api/admin/end', (req, res) => {
   const user = req.tgUser;
   const game = getActiveGame();
@@ -228,6 +282,6 @@ app.post('/api/admin/end', (req, res) => {
   res.json({ ok: true });
 });
 
-/* static */
+/* ---------- Static ---------- */
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
