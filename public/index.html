@@ -7,117 +7,30 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
-      --bg-dark: #0d1117;
-      --bg-card: #161b22;
-      --border: #30363d;
-      --text: #e6edf3;
-      --accent: #2f81f7;
-      --green: #2ea043;
-      --red: #da3633;
-      --yellow: #f0ad4e;
-      --shadow: 0 4px 10px rgba(0,0,0,0.25);
+      --bg-dark: #0d1117; --bg-card: #161b22; --border: #30363d; --text: #e6edf3;
+      --accent: #2f81f7; --green: #2ea043; --red: #da3633; --yellow: #f0ad4e; --shadow: 0 4px 10px rgba(0,0,0,0.25);
     }
-
-    body {
-      font-family: system-ui, sans-serif;
-      background: linear-gradient(180deg, #0d1117 0%, #111820 100%);
-      color: var(--text);
-      margin: 0; padding: 20px;
-      transition: all 0.3s ease;
-    }
-
-    h1 {
-      text-align: center;
-      font-weight: 700;
-      color: var(--accent);
-      margin-bottom: 20px;
-    }
-
-    button {
-      background: var(--accent);
-      border: none;
-      padding: 10px 16px;
-      border-radius: 10px;
-      color: #fff;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.1s;
-    }
-    button:hover { transform: scale(1.02); background:#3889f8; }
-    button.secondary { background: #30363d; color: #e6edf3; }
-    button.secondary:hover { background: #3a414b; }
-
-    input, select {
-      padding: 8px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: var(--bg-card);
-      color: var(--text);
-      width: 100%;
-      box-sizing: border-box;
-    }
-
-    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .hidden { display: none; }
-
-    .card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: var(--shadow);
-      margin: 10px 0;
-      animation: fadeIn 0.4s ease;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(5px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .req {
-      background: #1b212c;
-      padding: 10px;
-      border-radius: 10px;
-      margin: 6px 0;
-      border-left: 4px solid var(--accent);
-    }
-    .req.pending { border-left-color: var(--yellow); }
-    .req.approved { border-left-color: var(--green); }
-    .req.rejected { border-left-color: var(--red); }
-
-    .list { font-size: 14px; }
-    .list div { padding: 6px 0; border-bottom: 1px solid #2a313b; }
-
-    .badge {
-      display: inline-block;
-      min-width: 18px;
-      padding: 2px 6px;
-      border-radius: 999px;
-      background: var(--yellow);
-      color: #111;
-      font-weight: 700;
-      margin-left: 6px;
-    }
-
-    .role-label {
-      text-align: center;
-      padding: 6px 0;
-      font-size: 14px;
-      color: var(--yellow);
-    }
-
-    .fade-enter {
-      opacity: 0; transform: scale(0.98);
-    }
-    .fade-enter-active {
-      opacity: 1; transform: scale(1);
-      transition: all 0.3s ease;
-    }
+    body{font-family:system-ui,sans-serif;background:linear-gradient(180deg,#0d1117 0%,#111820 100%);color:var(--text);margin:0;padding:20px}
+    h1{text-align:center;font-weight:700;color:var(--accent);margin-bottom:20px}
+    button{background:var(--accent);border:none;padding:10px 16px;border-radius:10px;color:#fff;font-weight:600;cursor:pointer;transition:background .2s,transform .1s}
+    button:hover{transform:scale(1.02);background:#3889f8}
+    button.secondary{background:#30363d}
+    button.secondary:hover{background:#3a414b}
+    input,select{padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);width:100%;box-sizing:border-box}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .hidden{display:none}
+    .card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:var(--shadow);margin:10px 0}
+    .req{background:#1b212c;padding:10px;border-radius:10px;margin:6px 0;border-left:4px solid var(--accent)}
+    .badge{display:inline-block;min-width:18px;padding:2px 6px;border-radius:999px;background:var(--yellow);color:#111;font-weight:700;margin-left:6px}
+    .role-label{text-align:center;padding:6px 0;font-size:14px;color:var(--yellow)}
   </style>
 </head>
 <body>
   <h1>🎲 Chips Game</h1>
+
+  <audio id="ding" preload="auto"
+    src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQgAAAAA//8AAP//AAD//wAA//8AAP//AAD//wAA/38AAP9/AAD/fwAA/38AAP9/AAD/fwAA/38AAP9/AAD/fwAA/38AAP9/AAA="/>
+  <!-- короткий щелчок (низкобитный WAV), чтобы не грузить внешние файлы -->
 
   <div id="screenStart">
     <button id="btnStart">Начать / Присоединиться</button>
@@ -141,6 +54,7 @@
         <input id="adminAmount" type="number" placeholder="Введите количество фишек" />
         <button id="adminReqBtn">💰 Взять</button>
         <button id="adminRetBtn" class="secondary">♻️ Вернуть</button>
+        <button id="soundToggle" class="secondary">🔔 Звук: вкл</button>
       </div>
     </div>
 
@@ -185,15 +99,15 @@
   </div>
 
   <script>
-    const tg = window.Telegram?.WebApp;
-    tg?.expand();
-
+    const tg = window.Telegram?.WebApp; tg?.expand();
     const $ = id => document.getElementById(id);
-    const initData = tg?.initData || "";
-    const initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
-    const userId = tg?.initDataUnsafe?.user?.id;
-    const bodyWithAuth = (extra={}) => JSON.stringify(Object.assign({}, extra, {__initData:initData,__initDataUnsafe:initDataUnsafe}));
 
+    const initData = tg?.initData || "";
+    const initDataUnsafeObj = tg?.initDataUnsafe || {};
+    const initDataUnsafe = JSON.stringify(initDataUnsafeObj);
+    const userId = initDataUnsafeObj?.user?.id;
+
+    const bodyWithAuth = (extra={}) => JSON.stringify(Object.assign({}, extra, {__initData:initData,__initDataUnsafe:initDataUnsafe}));
     async function post(path, payloadObj={}) {
       const res = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: bodyWithAuth(payloadObj) });
       return await res.json();
@@ -201,6 +115,13 @@
 
     let currentRole = null;
     let adminUserId = null;
+    let es = null; // EventSource для админа
+    let soundOn = (localStorage.getItem('soundOn') ?? 'true') === 'true';
+
+    function updateSoundToggle(){
+      $('soundToggle')?.classList.toggle('secondary', !soundOn);
+      $('soundToggle')?.innerText = soundOn ? '🔔 Звук: вкл' : '🔕 Звук: выкл';
+    }
 
     $('btnStart').onclick = async ()=>{
       const r = await post('/api/game/start');
@@ -219,16 +140,21 @@
       $('screenRole').classList.add('hidden');
       $('screenAdmin').classList.toggle('hidden', role!=='admin');
       $('screenPlayer').classList.toggle('hidden', role!=='player');
+
       if(role==='admin'){
-        loadPending(); loadPlayers(); startAdminPolling();
+        updateSoundToggle();
+        attachSSE(); // мгновенные события
+        loadPending();
+        loadPlayers();
       } else {
-        loadMyHistory(); startPlayerPolling();
+        detachSSE();
+        loadMyHistory();
       }
     }
 
+    // ---- Игрок
     $('btnReq').onclick = async ()=>handleRequest('request');
     $('btnReturn').onclick = async ()=>handleRequest('return');
-
     async function handleRequest(type){
       const amt = parseInt(($('chipsInput').value||'0'), 10);
       if(amt<=0) return alert('Введите число > 0');
@@ -236,7 +162,6 @@
       if(!r.ok) alert(r.error); else $('chipsInput').value='';
       loadMyHistory();
     }
-
     async function loadMyHistory(){
       const r = await post('/api/player/history');
       const box = $('myHistory');
@@ -244,23 +169,25 @@
       if(!r.ok){ box.textContent = r.error; return; }
       if(!r.history?.length){ box.innerHTML = '<i>Нет заявок</i>'; return; }
       for(const item of r.history){
+        const stColor = item.status==='approved'?'#2ea043':item.status==='rejected'?'#da3633':'#f0ad4e';
         const div=document.createElement('div');
-        div.innerHTML = `<b>${item.type==='request'?'Запрос':'Возврат'}</b> · ${item.amount} · <span style="color:${item.status==='approved'?'#2ea043':item.status==='rejected'?'#da3633':'#f0ad4e'}">${item.status}</span>`;
+        div.innerHTML = `<b>${item.type==='request'?'Запрос':'Возврат'}</b> · ${item.amount} · <span style="color:${stColor}">${item.status}</span>`;
         box.appendChild(div);
       }
     }
 
+    // ---- Админ запросы как у игрока
     $('adminReqBtn').onclick = async ()=>adminRequest('request');
     $('adminRetBtn').onclick = async ()=>adminRequest('return');
-
     async function adminRequest(type){
       const amt = parseInt(($('adminAmount').value||'0'), 10);
       if(amt<=0) return alert('Введите число > 0');
       const r = await post('/api/player/request', {amount:amt, type});
       if(!r.ok) alert(r.error); else $('adminAmount').value='';
-      loadPending();
+      // не ждём — SSE сам обновит список
     }
 
+    // ---- Админ: список заявок / игроков
     $('btnRefresh').onclick = loadPending;
     $('btnPlayers').onclick = ()=>togglePlayers();
     $('btnEnd').onclick = async ()=>alert((await post('/api/admin/end')).ok ? 'Игра завершена' : 'Ошибка');
@@ -268,7 +195,10 @@
       const val = $('newAdminSelect').value;
       if(!val) return;
       const r = await post('/api/admin/change', { new_admin_user_id: val });
-      if(r.ok){ adminUserId = val; alert('✅ Админ изменён'); } else alert(r.error);
+      if(r.ok){ adminUserId = val; alert('✅ Админ изменён'); checkRoleChange(); } else alert(r.error);
+    };
+    $('soundToggle').onclick = ()=>{
+      soundOn = !soundOn; localStorage.setItem('soundOn', String(soundOn)); updateSoundToggle();
     };
 
     function togglePlayers(){
@@ -287,13 +217,13 @@
       badge.textContent = items.length; badge.style.display='';
       for(const it of items){
         const el = document.createElement('div');
-        el.className = `req ${it.status}`;
+        el.className = 'req';
         el.innerHTML = `<b>${it.first_name||'Игрок'} ${it.username?('@'+it.username):''}</b><br>
-        ${it.type==='request'?'Просит':'Возвращает'} <b>${it.amount}</b> фишек
-        <div class="row" style="margin-top:6px">
-          <button data-id="${it.id}" data-s="approved">✅ Одобрить</button>
-          <button class="secondary" data-id="${it.id}" data-s="rejected">❌ Отклонить</button>
-        </div>`;
+          ${it.type==='request'?'Просит':'Возвращает'} <b>${it.amount}</b> фишек
+          <div class="row" style="margin-top:6px">
+            <button data-id="${it.id}" data-s="approved">✅ Одобрить</button>
+            <button class="secondary" data-id="${it.id}" data-s="rejected">❌ Отклонить</button>
+          </div>`;
         list.appendChild(el);
       }
       list.querySelectorAll('button[data-id]').forEach(btn=>{
@@ -301,6 +231,7 @@
           const id = +btn.dataset.id, status = btn.dataset.s;
           const r = await post('/api/admin/decide', {id, status});
           if(!r.ok) alert(r.error);
+          // обновление тоже прилетит по SSE, но на всякий случай:
           loadPending(); loadPlayers();
         };
       });
@@ -313,10 +244,10 @@
       if(!r.ok){ box.textContent = r.error; return; }
       if(!r.players?.length){ box.innerHTML = '<i>Пока нет игроков</i>'; return; }
       for(const p of r.players){
+        const color = p.diff>0?'#2ea043':p.diff<0?'#da3633':'#f0ad4e';
         const row = document.createElement('div');
-        row.innerHTML = `<b>${p.first_name||'Игрок'} ${p.username?('@'+p.username):''}</b> — выдано: <b>${p.issued}</b>, возвращено: <b>${p.returned}</b>, итог: <b style="color:${p.diff>0?'#2ea043':p.diff<0?'#da3633':'#f0ad4e'}">${p.diff}</b>`;
+        row.innerHTML = `<b>${p.first_name||'Игрок'} ${p.username?('@'+p.username):''}</b> — выдано: <b>${p.issued}</b>, возвращено: <b>${p.returned}</b>, итог: <b style="color:${color}">${p.diff}</b>`;
         box.appendChild(row);
-
         const opt = document.createElement('option');
         opt.value = p.user_id;
         opt.textContent = `${p.first_name||'Игрок'} ${p.username?('@'+p.username):''}`;
@@ -324,35 +255,47 @@
       }
     }
 
+    // ---- Автосмена роли при смене админа
     async function checkRoleChange(){
       const r = await post('/api/game/start');
       if(r.ok && r.game){
         if(adminUserId !== r.game.admin_user_id){
           adminUserId = r.game.admin_user_id;
           const isNowAdmin = String(adminUserId) === String(userId);
-          if(isNowAdmin && currentRole !== 'admin'){
-            alert('🎉 Вы стали новым админом');
-            switchRole('admin');
-          } else if(!isNowAdmin && currentRole === 'admin'){
-            alert('Админ изменён, вы больше не админ');
-            switchRole('player');
-          }
+          if(isNowAdmin && currentRole !== 'admin'){ alert('🎉 Вы стали новым админом'); switchRole('admin'); }
+          else if(!isNowAdmin && currentRole === 'admin'){ alert('Админ изменён, вы больше не админ'); switchRole('player'); }
         }
       }
     }
 
-    let playerTimer, adminTimer, roleTimer;
-    function startPlayerPolling(){
-      clearAll(); loadMyHistory();
-      playerTimer = setInterval(loadMyHistory, 5000);
-      roleTimer = setInterval(checkRoleChange, 5000);
+    // ---- SSE подключение (админ)
+    function attachSSE(){
+      detachSSE();
+      const url = `/sse/admin?initData=${encodeURIComponent(initData)}&initDataUnsafe=${encodeURIComponent(initDataUnsafe)}`;
+      es = new EventSource(url);
+      es.addEventListener('hello', e => {
+        try {
+          const data = JSON.parse(e.data||'{}');
+          updateBadge(data.pending ?? 0);
+        } catch {}
+      });
+      es.addEventListener('pending', e => {
+        try {
+          const data = JSON.parse(e.data||'{}');
+          updateBadge(data.pending ?? null);
+        } catch {}
+        if(soundOn){ const a=$('ding'); a.currentTime=0; a.play().catch(()=>{}); }
+        loadPending();
+      });
+      es.onerror = () => { /* попробуем переподключаться позже */ };
     }
-    function startAdminPolling(){
-      clearAll(); loadPending();
-      adminTimer = setInterval(()=>{ loadPending(); checkRoleChange(); }, 5000);
+    function detachSSE(){
+      if(es){ es.close(); es=null; }
     }
-    function clearAll(){
-      clearInterval(playerTimer); clearInterval(adminTimer); clearInterval(roleTimer);
+    function updateBadge(cnt){
+      const b=$('badge');
+      if(cnt===null || cnt===undefined){ b.style.display='none'; return; }
+      if(cnt<=0){ b.style.display='none'; } else { b.textContent=cnt; b.style.display='inline-block'; }
     }
   </script>
 </body>
