@@ -1,4 +1,4 @@
-/* Telegram Chips Game — final fixed server version (notifications + end game fix) */
+/* Telegram Chips Game — mobile fix (initDataUnsafe fallback + full functionality) */
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -113,9 +113,19 @@ app.use('/api', (req, res, next) => {
   const initDataRaw = req.body?.__initData;
   const unsafeRaw = req.body?.__initDataUnsafe;
   const unsafe = JSON.parse(unsafeRaw || '{}');
-  const check = verifyInitData(initDataRaw);
-  const user = check.user || unsafe.user;
-  if (!user?.id) return res.status(401).json({ ok: false, error: 'Missing user.id' });
+  let check = verifyInitData(initDataRaw);
+  let user = check.user;
+
+  // ✅ Mobile fallback: use unsafe user if signature is missing
+  if (!user?.id && unsafe?.user?.id) {
+    user = unsafe.user;
+    check = { ok: true, user };
+  }
+
+  if (!user?.id) {
+    return res.status(401).json({ ok: false, error: 'Missing user.id' });
+  }
+
   req.tgUser = user;
   req.tgUnsafe = unsafe;
   next();
@@ -123,7 +133,7 @@ app.use('/api', (req, res, next) => {
 
 /* ---------- API ---------- */
 
-// 1️⃣ Start or join game
+// Start or join game
 app.post('/api/game/start', (req, res) => {
   const user = req.tgUser;
   let game = getActiveGame();
@@ -147,7 +157,7 @@ app.post('/api/game/start', (req, res) => {
   res.json({ ok: true, game });
 });
 
-// 2️⃣ Player makes a chip request or return
+// Player requests chips or returns them
 app.post('/api/player/request', async (req, res) => {
   const user = req.tgUser;
   const { amount, type } = req.body || {};
@@ -162,7 +172,6 @@ app.post('/api/player/request', async (req, res) => {
               VALUES (?,?,?,?, 'pending')`)
     .run(game.id, String(user.id), type, a);
 
-  // refresh game to ensure current admin is used
   const fresh = getActiveGame();
 
   if (fresh.admin_user_id && String(fresh.admin_user_id) !== String(user.id)) {
@@ -176,7 +185,7 @@ app.post('/api/player/request', async (req, res) => {
   res.json({ ok: true, message: 'Request created' });
 });
 
-// 3️⃣ Player history
+// Player history
 app.post('/api/player/history', (req, res) => {
   const user = req.tgUser;
   const game = getActiveGame();
@@ -192,7 +201,7 @@ app.post('/api/player/history', (req, res) => {
   res.json({ ok: true, history: rows });
 });
 
-// 4️⃣ Admin: pending requests
+// Admin: pending requests
 app.post('/api/admin/pending', (req, res) => {
   const user = req.tgUser;
   const game = getActiveGame();
@@ -210,7 +219,7 @@ app.post('/api/admin/pending', (req, res) => {
   res.json({ ok: true, requests: rows });
 });
 
-// 5️⃣ Admin: approve/reject
+// Admin: approve/reject
 app.post('/api/admin/decide', (req, res) => {
   const user = req.tgUser;
   const { id, status } = req.body || {};
@@ -230,7 +239,7 @@ app.post('/api/admin/decide', (req, res) => {
   res.json({ ok: true });
 });
 
-// 6️⃣ Admin: players summary
+// Admin: players summary
 app.post('/api/admin/players', (req, res) => {
   const user = req.tgUser;
   const game = getActiveGame();
@@ -252,7 +261,7 @@ app.post('/api/admin/players', (req, res) => {
   res.json({ ok: true, players: rows.map(r => ({ ...r, diff: r.returned - r.issued })) });
 });
 
-// 7️⃣ Admin: change admin
+// Admin: change admin
 app.post('/api/admin/change', (req, res) => {
   const user = req.tgUser;
   const { new_admin_user_id } = req.body || {};
@@ -273,7 +282,7 @@ app.post('/api/admin/change', (req, res) => {
   res.json({ ok: true });
 });
 
-// 8️⃣ Admin: end game
+// Admin: end game
 app.post('/api/admin/end', (req, res) => {
   const user = req.tgUser;
   const game = getActiveGame();
