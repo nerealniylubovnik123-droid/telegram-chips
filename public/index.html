@@ -36,7 +36,7 @@
     .list div{padding:6px 0;border-bottom:1px solid #2a313b}
     .badge{display:inline-block;min-width:18px;padding:2px 6px;border-radius:999px;background:var(--yellow);color:#111;font-weight:700;margin-left:6px}
     .role-label{text-align:center;padding:6px 0;font-size:14px;color:var(--yellow)}
-    /* подсветка новой заявки */
+    /* подсветка новой секции заявок */
     .pulse{animation:pulse 1.2s ease 2}
     @keyframes pulse{
       0%{box-shadow:0 0 0 0 rgba(47,129,247,.7)}
@@ -62,6 +62,7 @@
     </div>
   </div>
 
+  <!-- ADMIN -->
   <div id="screenAdmin" class="hidden">
     <div class="role-label">👑 Вы администратор</div>
 
@@ -96,6 +97,7 @@
     </div>
   </div>
 
+  <!-- PLAYER -->
   <div id="screenPlayer" class="hidden">
     <div class="role-label">🎮 Вы игрок</div>
 
@@ -130,8 +132,9 @@
 
     let currentRole = null;
     let adminUserId = null;
-    let lastPendingCount = 0; // <— отслеживаем прошлое количество заявок
+    let lastPendingCount = 0;
 
+    // --- Navigation
     $('btnStart').onclick = async ()=>{
       const r = await post('/api/game/start');
       if(r.ok){
@@ -157,7 +160,7 @@
       }
     }
 
-    // ---- Игрок
+    // --- Player actions
     $('btnReq').onclick = async ()=>handleRequest('request');
     $('btnReturn').onclick = async ()=>handleRequest('return');
 
@@ -167,7 +170,6 @@
       const r = await post('/api/player/request', {amount:amt, type});
       if(!r.ok) alert(r.error); else $('chipsInput').value='';
       loadMyHistory();
-      // если мы admin в этом же окне — обновим сразу
       if (window.isAdminActive) loadPending();
     }
 
@@ -185,7 +187,7 @@
       }
     }
 
-    // ---- Админ
+    // --- Admin actions
     $('adminReqBtn').onclick = async ()=>adminRequest('request');
     $('adminRetBtn').onclick = async ()=>adminRequest('return');
 
@@ -204,7 +206,12 @@
     };
     $('btnEnd').onclick = async ()=>{
       const r = await post('/api/admin/end');
-      alert(r.ok ? 'Игра завершена' : ('Ошибка: '+r.error));
+      if (r.ok) {
+        alert('Игра завершена');
+        resetToStart();
+      } else {
+        alert('Ошибка: ' + r.error);
+      }
     };
     $('btnChangeAdmin').onclick = async ()=>{
       const val = $('newAdminSelect').value;
@@ -220,31 +227,23 @@
       if(!r.ok){ list.textContent = r.error; badge.style.display='none'; return; }
 
       const items = r.requests || [];
-      // бейдж
       if(items.length===0){ badge.style.display='none'; } else { badge.textContent = items.length; badge.style.display='inline-block'; }
 
-      // ⬇️ авто-показ при появлении новых заявок
+      // авто-показ при появлении новых заявок
       if (currentRole === 'admin') {
         const playersPanel = $('adminSectionPlayers');
         const requestsPanel = $('adminSectionRequests');
 
-        // новые заявки (число выросло) → показать и подсветить
         if (items.length > lastPendingCount) {
-          // свернуть список игроков, если открыт
           if (!playersPanel.classList.contains('hidden')) playersPanel.classList.add('hidden');
-          // подсветка и прокрутка
           requestsPanel.classList.add('pulse');
           requestsPanel.scrollIntoView({ behavior:'smooth', block:'start' });
-          // хэптик
           try { tg?.HapticFeedback?.notificationOccurred('success'); } catch(e){}
-          // снять подсветку позже
           setTimeout(()=>requestsPanel.classList.remove('pulse'), 1500);
         }
-        // сохранить счётчик к следующему опросу
         lastPendingCount = items.length;
       }
 
-      // рендер списка
       if(items.length===0){
         list.innerHTML = '<i>Нет активных заявок</i>';
         return;
@@ -289,23 +288,33 @@
       }
     }
 
+    // --- Role / game state helpers
+    function resetToStart(){
+      clearAll();
+      currentRole = null;
+      adminUserId = null;
+      $('screenAdmin').classList.add('hidden');
+      $('screenPlayer').classList.add('hidden');
+      $('screenRole').classList.remove('hidden');
+      alert('🛑 Игра завершена. Начните новую.');
+    }
+
     async function checkRoleChange(){
       const r = await post('/api/game/start');
-      if(r.ok && r.game){
-        if(adminUserId !== r.game.admin_user_id){
+      if (r.ok && r.game) {
+        // если по какой-то причине вернулся статус ended — сбросим UI
+        if (r.game.status === 'ended') {
+          resetToStart();
+          return;
+        }
+        // просто обновим adminUserId, но роли НЕ переключаем автоматически
+        if (adminUserId !== r.game.admin_user_id) {
           adminUserId = r.game.admin_user_id;
-          const isNowAdmin = String(adminUserId) === String(userId);
-          if(isNowAdmin && currentRole !== 'admin'){
-            alert('🎉 Вы стали новым админом');
-            switchRole('admin');
-          } else if(!isNowAdmin && currentRole === 'admin'){
-            alert('Админ изменён, вы больше не админ');
-            switchRole('player');
-          }
         }
       }
     }
 
+    // --- Polling timers
     let playerTimer, adminTimer, roleTimer;
     function startPlayerPolling(){
       clearAll(); loadMyHistory();
