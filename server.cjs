@@ -1,4 +1,4 @@
-/* Telegram Chips Game — fixed: admin notifications restored */
+/* Telegram Chips Game — instant admin updates via SSE */
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -86,7 +86,7 @@ function verifyInitData(initDataRaw) {
   return { ok: true, user };
 }
 
-/* ---------- Middleware ---------- */
+/* ---------- Middleware (for /api) ---------- */
 app.use('/api', (req, res, next) => {
   const initDataRaw = req.body?.__initData;
   const unsafeRaw = req.body?.__initDataUnsafe;
@@ -116,6 +116,76 @@ async function notifyTelegram(userId, text) {
   }
 }
 
+/* =======================================================
+   ===============  SSE (Server-Sent Events)  =============
+   ======================================================= */
+const sseClients = new Set(); // { res, userId }
+
+function sseSend(res, event, data) {
+  // optional: event name
+  if (event) res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function broadcastTo(predicate, event, data) {
+  for (const client of Array.from(sseClients)) {
+    try {
+      if (predicate(client)) sseSend(client.res, event, data);
+    } catch {
+      try { client.res.end(); } catch {}
+      sseClients.delete(client);
+    }
+  }
+}
+
+function isCurrentAdmin(userId) {
+  const g = getActiveGame();
+  if (!g) return false;
+  return String(g.admin_user_id) === String(userId);
+}
+
+/* Специальный обработчик SSE, принимает initData через query */
+app.get('/api/stream', (req, res) => {
+  const initDataRaw = req.query.initData;
+  const unsafeRaw = req.query.initDataUnsafe || '{}';
+
+  let user = null;
+  const check = verifyInitData(initDataRaw);
+  if (check.ok) {
+    user = check.user;
+  } else {
+    try { user = JSON.parse(unsafeRaw || '{}').user || null; } catch { user = null; }
+  }
+  if (!user?.id) return res.status(401).end();
+
+  // SSE headers
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const client = { res, userId: String(user.id) };
+  sseClients.add(client);
+
+  // приветствие и начальный статус (админ ли)
+  sseSend(res, 'hello', { ok: true, isAdmin: isCurrentAdmin(client.userId) });
+
+  // пинги, чтобы соединение не засыпало
+  const ping = setInterval(() => {
+    try { res.write(': ping\n\n'); } catch {}
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(ping);
+    sseClients.delete(client);
+  });
+});
+
+/* helper: пушим событие всем текущим админам */
+function pushToAdmins(event, payload) {
+  broadcastTo(c => isCurrentAdmin(c.userId), event, payload);
+}
+
 /* ---------- API ---------- */
 
 // Start/join game
@@ -141,7 +211,7 @@ app.post('/api/game/start', (req, res) => {
   res.json({ ok: true, game });
 });
 
-// Player request/return (with admin notify)
+// Player request/return (with admin notify + SSE push)
 app.post('/api/player/request', async (req, res) => {
   const user = req.tgUser;
   const { amount, type } = req.body || {};
@@ -152,11 +222,11 @@ app.post('/api/player/request', async (req, res) => {
   const game = getActiveGame();
   if (!game) return res.json({ ok: false, error: 'No active game' });
 
-  db.prepare(`INSERT INTO chip_tx (game_id,user_id,type,amount,status)
-              VALUES (?,?,?,?, 'pending')`)
-    .run(game.id, String(user.id), type, a);
+  const txId = db.prepare(`INSERT INTO chip_tx (game_id,user_id,type,amount,status)
+                           VALUES (?,?,?,?, 'pending')`)
+                 .run(game.id, String(user.id), type, a).lastInsertRowid;
 
-  // ✅ уведомление админу (Telegram message)
+  // Telegram notify (optional)
   if (game.admin_user_id && String(game.admin_user_id) !== String(user.id)) {
     const who = `${user.first_name || 'Игрок'}${user.username ? ' @' + user.username : ''}`;
     const msg = type === 'request'
@@ -165,7 +235,13 @@ app.post('/api/player/request', async (req, res) => {
     await notifyTelegram(game.admin_user_id, msg);
   }
 
-  res.json({ ok: true, message: 'Request created' });
+  // 🔔 моментально пушим админам
+  pushToAdmins('new_request', {
+    id: txId, type, amount: a,
+    user: { id: String(user.id), first_name: user.first_name || '', username: user.username || null }
+  });
+
+  res.json({ ok: true, message: 'Request created', id: txId });
 });
 
 // Player history
@@ -219,10 +295,13 @@ app.post('/api/admin/decide', (req, res) => {
   db.prepare(`UPDATE chip_tx SET status=?, decided_at=datetime('now'), decided_by=? WHERE id=?`)
     .run(status, String(user.id), id);
 
+  // 🔔 сообщаем всем админам, чтобы обновили очередь
+  pushToAdmins('queue_update', { id, status });
+
   res.json({ ok: true });
 });
 
-// Admin: players summary
+// Admin: players summary (diff = returned - issued, где + это «в плюсе»)
 app.post('/api/admin/players', (req, res) => {
   const user = req.tgUser;
   const game = getActiveGame();
@@ -238,7 +317,7 @@ app.post('/api/admin/players', (req, res) => {
     LEFT JOIN chip_tx t ON t.user_id = p.user_id AND t.game_id = p.game_id
     WHERE p.game_id = ?
     GROUP BY p.user_id, p.first_name, p.username
-    ORDER BY (issued - returned) DESC, p.first_name ASC
+    ORDER BY (returned - issued) DESC, p.first_name ASC
   `).all(game.id);
 
   res.json({ ok: true, players: rows.map(r => ({ ...r, diff: r.returned - r.issued })) });
@@ -262,6 +341,9 @@ app.post('/api/admin/change', (req, res) => {
       .run(String(new_admin_user_id), game.id);
   })();
 
+  // 🔔 При смене админа сообщаем всем подключённым клиентам (чтобы они могли авто-переключить роль)
+  broadcastTo(() => true, 'admin_changed', { admin_user_id: String(new_admin_user_id) });
+
   res.json({ ok: true });
 });
 
@@ -273,6 +355,10 @@ app.post('/api/admin/end', (req, res) => {
   if (String(game.admin_user_id) !== String(user.id))
     return res.json({ ok: false, error: 'Only admin can end the game' });
   db.prepare(`UPDATE game SET status='ended', ended_at=datetime('now') WHERE id=?`).run(game.id);
+
+  // Можно оповестить всех клиентов о завершении
+  broadcastTo(() => true, 'game_ended', { id: game.id });
+
   res.json({ ok: true });
 });
 
