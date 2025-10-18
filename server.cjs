@@ -1,4 +1,4 @@
-/* Telegram Chips Game — instant admin updates via SSE */
+/* Telegram Chips Game — SSE instant updates with active admin tracking */
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -42,9 +42,9 @@ CREATE TABLE IF NOT EXISTS chip_tx (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   game_id INTEGER NOT NULL,
   user_id TEXT NOT NULL,
-  type TEXT NOT NULL,
+  type TEXT NOT NULL,        -- 'request' | 'return'
   amount INTEGER NOT NULL,
-  status TEXT NOT NULL,
+  status TEXT NOT NULL,      -- 'pending' | 'approved' | 'rejected' | 'revoked'
   requested_at TEXT NOT NULL DEFAULT (datetime('now')),
   decided_at TEXT,
   decided_by TEXT
@@ -86,7 +86,7 @@ function verifyInitData(initDataRaw) {
   return { ok: true, user };
 }
 
-/* ---------- Middleware (for /api) ---------- */
+/* ---------- Middleware (/api) ---------- */
 app.use('/api', (req, res, next) => {
   const initDataRaw = req.body?.__initData;
   const unsafeRaw = req.body?.__initDataUnsafe;
@@ -119,10 +119,10 @@ async function notifyTelegram(userId, text) {
 /* =======================================================
    ===============  SSE (Server-Sent Events)  =============
    ======================================================= */
-const sseClients = new Set(); // { res, userId }
+const sseClients = new Set();   // { res, userId }
+const activeAdmins = new Set(); // userIds, которые сейчас реально слушают SSE как админ
 
 function sseSend(res, event, data) {
-  // optional: event name
   if (event) res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
@@ -134,6 +134,7 @@ function broadcastTo(predicate, event, data) {
     } catch {
       try { client.res.end(); } catch {}
       sseClients.delete(client);
+      activeAdmins.delete(client.userId);
     }
   }
 }
@@ -144,17 +145,25 @@ function isCurrentAdmin(userId) {
   return String(g.admin_user_id) === String(userId);
 }
 
-/* Специальный обработчик SSE, принимает initData через query */
+function pushToAdmins(event, payload) {
+  // шлём только тем, кто помечен активным админом (подключён SSE как админ)
+  broadcastTo(c => activeAdmins.has(c.userId), event, payload);
+}
+
+/* SSE endpoint: принимает initData и initDataUnsafe через query */
 app.get('/api/stream', (req, res) => {
   const initDataRaw = req.query.initData;
   const unsafeRaw = req.query.initDataUnsafe || '{}';
 
   let user = null;
   const check = verifyInitData(initDataRaw);
-  if (check.ok) {
+  if (check.ok && check.user) {
     user = check.user;
   } else {
     try { user = JSON.parse(unsafeRaw || '{}').user || null; } catch { user = null; }
+    if (!DEV_ALLOW_UNSAFE && !check.ok) {
+      return res.status(401).end(); // при строгом режиме без валидной подписи — отказ
+    }
   }
   if (!user?.id) return res.status(401).end();
 
@@ -167,8 +176,11 @@ app.get('/api/stream', (req, res) => {
   const client = { res, userId: String(user.id) };
   sseClients.add(client);
 
-  // приветствие и начальный статус (админ ли)
-  sseSend(res, 'hello', { ok: true, isAdmin: isCurrentAdmin(client.userId) });
+  // если этот пользователь — текущий админ, отмечаем его активным админом
+  if (isCurrentAdmin(client.userId)) activeAdmins.add(client.userId);
+
+  // приветствие и мгновенный статус
+  sseSend(res, 'hello', { ok: true, isAdmin: activeAdmins.has(client.userId) });
 
   // пинги, чтобы соединение не засыпало
   const ping = setInterval(() => {
@@ -178,13 +190,9 @@ app.get('/api/stream', (req, res) => {
   req.on('close', () => {
     clearInterval(ping);
     sseClients.delete(client);
+    activeAdmins.delete(client.userId);
   });
 });
-
-/* helper: пушим событие всем текущим админам */
-function pushToAdmins(event, payload) {
-  broadcastTo(c => isCurrentAdmin(c.userId), event, payload);
-}
 
 /* ---------- API ---------- */
 
@@ -208,10 +216,11 @@ app.post('/api/game/start', (req, res) => {
                 VALUES (?,?,?,?,0)`)
       .run(game.id, String(user.id), user.first_name || '', user.username || null);
   }
+
   res.json({ ok: true, game });
 });
 
-// Player request/return (with admin notify + SSE push)
+// Player request/return (Telegram notify + SSE push to admins)
 app.post('/api/player/request', async (req, res) => {
   const user = req.tgUser;
   const { amount, type } = req.body || {};
@@ -226,7 +235,7 @@ app.post('/api/player/request', async (req, res) => {
                            VALUES (?,?,?,?, 'pending')`)
                  .run(game.id, String(user.id), type, a).lastInsertRowid;
 
-  // Telegram notify (optional)
+  // Telegram notify админу (если не сам админ создал)
   if (game.admin_user_id && String(game.admin_user_id) !== String(user.id)) {
     const who = `${user.first_name || 'Игрок'}${user.username ? ' @' + user.username : ''}`;
     const msg = type === 'request'
@@ -235,9 +244,11 @@ app.post('/api/player/request', async (req, res) => {
     await notifyTelegram(game.admin_user_id, msg);
   }
 
-  // 🔔 моментально пушим админам
+  // Мгновенно пушим всем активным админам
   pushToAdmins('new_request', {
-    id: txId, type, amount: a,
+    id: txId,
+    type,
+    amount: a,
     user: { id: String(user.id), first_name: user.first_name || '', username: user.username || null }
   });
 
@@ -275,6 +286,7 @@ app.post('/api/admin/pending', (req, res) => {
     WHERE t.game_id=? AND t.status='pending'
     ORDER BY t.requested_at ASC
   `).all(game.id);
+
   res.json({ ok: true, requests: rows });
 });
 
@@ -283,6 +295,7 @@ app.post('/api/admin/decide', (req, res) => {
   const user = req.tgUser;
   const { id, status } = req.body || {};
   if (!['approved', 'rejected'].includes(status)) return res.json({ ok: false, error: 'Bad status' });
+
   const game = getActiveGame();
   if (!game) return res.json({ ok: false, error: 'No active game' });
   if (String(game.admin_user_id) !== String(user.id))
@@ -295,13 +308,13 @@ app.post('/api/admin/decide', (req, res) => {
   db.prepare(`UPDATE chip_tx SET status=?, decided_at=datetime('now'), decided_by=? WHERE id=?`)
     .run(status, String(user.id), id);
 
-  // 🔔 сообщаем всем админам, чтобы обновили очередь
+  // сообщаем админам, чтобы обновили очередь мгновенно
   pushToAdmins('queue_update', { id, status });
 
   res.json({ ok: true });
 });
 
-// Admin: players summary (diff = returned - issued, где + это «в плюсе»)
+// Admin: players summary (diff = returned - issued; + это «в плюсе»)
 app.post('/api/admin/players', (req, res) => {
   const user = req.tgUser;
   const game = getActiveGame();
@@ -341,7 +354,12 @@ app.post('/api/admin/change', (req, res) => {
       .run(String(new_admin_user_id), game.id);
   })();
 
-  // 🔔 При смене админа сообщаем всем подключённым клиентам (чтобы они могли авто-переключить роль)
+  // обновляем активных админов: старого удалим, новый подключится/переподключится
+  for (const u of Array.from(activeAdmins)) {
+    if (!isCurrentAdmin(u)) activeAdmins.delete(u);
+  }
+
+  // оповещаем всех клиентов о смене админа (клиенты сами переключат роль)
   broadcastTo(() => true, 'admin_changed', { admin_user_id: String(new_admin_user_id) });
 
   res.json({ ok: true });
@@ -354,9 +372,10 @@ app.post('/api/admin/end', (req, res) => {
   if (!game) return res.json({ ok: false, error: 'No active game' });
   if (String(game.admin_user_id) !== String(user.id))
     return res.json({ ok: false, error: 'Only admin can end the game' });
+
   db.prepare(`UPDATE game SET status='ended', ended_at=datetime('now') WHERE id=?`).run(game.id);
 
-  // Можно оповестить всех клиентов о завершении
+  // всем сообщаем, что игра завершена
   broadcastTo(() => true, 'game_ended', { id: game.id });
 
   res.json({ ok: true });
