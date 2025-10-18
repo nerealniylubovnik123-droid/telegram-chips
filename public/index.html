@@ -177,13 +177,18 @@
     $('asPlayer').onclick = ()=>switchRole('player');
 
     function switchRole(role){
-      currentRole = role;
-      $('screenRole').classList.add('hidden');
-      $('screenAdmin').classList.toggle('hidden', role!=='admin');
-      $('screenPlayer').classList.toggle('hidden', role!=='player');
-      if(role==='admin'){ loadPending(); loadPlayers(); }
-      else { loadMyHistory(); }
-    }
+  currentRole = role;
+  $('screenRole').classList.add('hidden');
+  $('screenAdmin').classList.toggle('hidden', role!=='admin');
+  $('screenPlayer').classList.toggle('hidden', role!=='player');
+
+  // 🔁 при смене роли переподключаем SSE — важно для админа
+  if (es) { try { es.close(); } catch {} es = null; }
+  connectSSE();
+
+  if(role==='admin'){ loadPending(); loadPlayers(); }
+  else { loadMyHistory(); }
+}
 
     // ---- Игрок
     $('btnReq').onclick = async ()=>handleRequest('request');
