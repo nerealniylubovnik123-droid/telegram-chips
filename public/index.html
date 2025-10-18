@@ -36,13 +36,9 @@
     .list div{padding:6px 0;border-bottom:1px solid #2a313b}
     .badge{display:inline-block;min-width:18px;padding:2px 6px;border-radius:999px;background:var(--yellow);color:#111;font-weight:700;margin-left:6px}
     .role-label{text-align:center;padding:6px 0;font-size:14px;color:var(--yellow)}
-    /* подсветка новой секции заявок */
     .pulse{animation:pulse 1.2s ease 2}
-    @keyframes pulse{
-      0%{box-shadow:0 0 0 0 rgba(47,129,247,.7)}
-      70%{box-shadow:0 0 0 12px rgba(47,129,247,0)}
-      100%{box-shadow:0 0 0 0 rgba(47,129,247,0)}
-    }
+    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,129,247,.7)}70%{box-shadow:0 0 0 12px rgba(47,129,247,0)}100%{box-shadow:0 0 0 0 rgba(47,129,247,0)}}
+    .muted{color:#9da3ae}
   </style>
 </head>
 <body>
@@ -50,6 +46,10 @@
 
   <div id="screenStart">
     <button id="btnStart">Начать / Присоединиться</button>
+    <div class="card" style="margin-top:12px">
+      <h3>Статус игры</h3>
+      <div id="gameInfo" class="list"></div>
+    </div>
   </div>
 
   <div id="screenRole" class="hidden">
@@ -133,6 +133,23 @@
     let currentRole = null;
     let adminUserId = null;
     let lastPendingCount = 0;
+
+    // --- Start screen info
+    async function loadGameInfo() {
+      const box = $('gameInfo');
+      box.innerHTML = '<span class="muted">Загрузка…</span>';
+      const r = await post('/api/game/info');
+      if (!r.ok) { box.textContent = r.error || 'Ошибка'; return; }
+      if (!r.game) {
+        box.innerHTML = '<div>Нет активной игры</div>';
+        return;
+      }
+      const a = r.admin;
+      const who = `${a?.first_name || 'Неизвестно'}${a?.username ? ' @' + a.username : ''}`;
+      box.innerHTML = `<div>Статус: <b>активна</b></div>
+                       <div>Админ: <b>${who}</b></div>`;
+      adminUserId = r.game.admin_user_id;
+    }
 
     // --- Navigation
     $('btnStart').onclick = async ()=>{
@@ -229,7 +246,6 @@
       const items = r.requests || [];
       if(items.length===0){ badge.style.display='none'; } else { badge.textContent = items.length; badge.style.display='inline-block'; }
 
-      // авто-показ при появлении новых заявок
       if (currentRole === 'admin') {
         const playersPanel = $('adminSectionPlayers');
         const requestsPanel = $('adminSectionRequests');
@@ -296,18 +312,18 @@
       $('screenAdmin').classList.add('hidden');
       $('screenPlayer').classList.add('hidden');
       $('screenRole').classList.remove('hidden');
+      $('screenStart').classList.remove('hidden');
+      loadGameInfo();
       alert('🛑 Игра завершена. Начните новую.');
     }
 
     async function checkRoleChange(){
       const r = await post('/api/game/start');
       if (r.ok && r.game) {
-        // если по какой-то причине вернулся статус ended — сбросим UI
         if (r.game.status === 'ended') {
           resetToStart();
           return;
         }
-        // просто обновим adminUserId, но роли НЕ переключаем автоматически
         if (adminUserId !== r.game.admin_user_id) {
           adminUserId = r.game.admin_user_id;
         }
@@ -328,6 +344,9 @@
     function clearAll(){
       clearInterval(playerTimer); clearInterval(adminTimer); clearInterval(roleTimer);
     }
+
+    // initial load
+    loadGameInfo();
   </script>
 </body>
 </html>
