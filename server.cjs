@@ -370,5 +370,20 @@ app.post('/api/admin/summary', (req, res) => {
 
   res.json({ ok:true, transfers });
 });
+app.post('/api/player/game-history', (req, res) => {
+  const user = req.tgUser;
+  try {
+    const rows = db.prepare(`
+      SELECT delta, total, created_at
+      FROM player_game_history
+      WHERE user_id=?
+      ORDER BY id DESC
+      LIMIT 50
+    `).all(String(user.id));
+    res.json({ ok: true, history: rows });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));

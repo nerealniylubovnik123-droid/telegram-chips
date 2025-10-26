@@ -230,7 +230,7 @@ $('btnEndGlobal').onclick = async ()=>{
       }
     }
     async function loadGameHistory(){
-  const r = await post('/api/player/history');
+  const r = await post('/api/player/game-history');
   const box = $('myGameHistory');
   box.innerHTML = '';
   if(!r.ok){ box.textContent = r.error; return; }
