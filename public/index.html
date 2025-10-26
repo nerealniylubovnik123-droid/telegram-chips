@@ -187,10 +187,15 @@ $('btnEndGlobal').onclick = async ()=>{
       $('screenAdmin').classList.toggle('hidden', role!=='admin');
       $('screenPlayer').classList.toggle('hidden', role!=='player');
       if(role==='admin'){
-        loadPending(); loadPlayers(); startAdminPolling();
-      } else {
-        loadMyHistory(); startPlayerPolling();
-      }
+  loadPending();
+  loadPlayers();
+  loadGameHistory(); // 👈 добавляем вызов истории
+  startAdminPolling();
+} else {
+  loadMyHistory();
+  loadGameHistory(); // 👈 добавляем и здесь, если ещё не добавлено
+  startPlayerPolling();
+}
     }
     function startPlayerPolling(){
   clearAll();
