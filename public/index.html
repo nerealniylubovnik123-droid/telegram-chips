@@ -159,7 +159,15 @@
 
     // --- Navigation
     $('btnStart').onclick = async ()=>{
-      $('btnEndGlobal').onclick = async ()=>{
+  const r = await post('/api/game/start');
+  if(r.ok){
+    $('screenStart').classList.add('hidden');
+    $('screenRole').classList.remove('hidden');
+    adminUserId = r.game.admin_user_id;
+  } else alert(r.error);
+};
+
+$('btnEndGlobal').onclick = async ()=>{
   const r = await post('/api/admin/end');
   if(r.ok){
     alert('Игра завершена всеми игроками');
@@ -168,13 +176,6 @@
     alert('Ошибка: ' + (r.error || ''));
   }
 };
-      const r = await post('/api/game/start');
-      if(r.ok){
-        $('screenStart').classList.add('hidden');
-        $('screenRole').classList.remove('hidden');
-        adminUserId = r.game.admin_user_id;
-      } else alert(r.error);
-    };
 
     $('asAdmin').onclick = ()=>switchRole('admin');
     $('asPlayer').onclick = ()=>switchRole('player');
