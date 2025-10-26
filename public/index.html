@@ -233,21 +233,26 @@ $('btnEndGlobal').onclick = async ()=>{
   const r = await post('/api/player/game-history');
   const box = $('myGameHistory');
   box.innerHTML = '';
-  if(!r.ok){ box.textContent = r.error; return; }
-  if(!r.history?.length){ box.innerHTML = '<i>История пуста</i>'; return; }
-  let total = 0;
-  for(const item of r.history.reverse()){
-    const color = item.status==='approved' ? (item.type==='request' ? '#da3633' : '#2ea043') : '#9da3ae';
-    const sign = item.type==='request' ? '-' : '+';
+  if(!r.ok){ box.textContent = r.error || 'Ошибка'; return; }
+
+  const arr = r.history || [];
+  if(!arr.length){ box.innerHTML = '<i>История пуста</i>'; return; }
+
+  // показываем последнюю запись сверху
+  for (const it of arr) {
+    const delta = Number(it.delta) || 0;
+    const color = delta >= 0 ? '#2ea043' : '#da3633';
+    const sign = delta >= 0 ? '+' : '';
+    // created_at из SQLite формата "YYYY-MM-DD HH:MM:SS"
+    const dateStr = it.created_at ? new Date(it.created_at.replace(' ', 'T')).toLocaleDateString() : '';
     const row = document.createElement('div');
-    row.innerHTML = `${new Date(item.requested_at).toLocaleDateString()} — <b style="color:${color}">${sign}${item.amount}</b>`;
+    row.innerHTML = `${dateStr} — <b style="color:${color}">${sign}${Math.abs(delta)}</b> <span class="muted">(итог: ${it.total})</span>`;
     box.appendChild(row);
-    if(item.status==='approved'){
-      total += (item.type==='request' ? -item.amount : item.amount);
-    }
   }
+
+  const lastTotal = arr[0]?.total ?? 0;
   const sum = document.createElement('div');
-  sum.innerHTML = `<b>Итого:</b> ${total > 0 ? '+'+total : total}`;
+  sum.innerHTML = `<b>Итого по всем играм:</b> ${lastTotal >= 0 ? '+' : ''}${lastTotal}`;
   box.appendChild(sum);
 }
 
