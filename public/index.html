@@ -46,6 +46,7 @@
 
   <div id="screenStart">
     <button id="btnStart">Начать / Присоединиться</button>
+      <button id="btnEndGlobal" class="secondary" style="margin-top:10px">🛑 Завершить игру</button>
     <div class="card" style="margin-top:12px">
       <h3>Статус игры</h3>
       <div id="gameInfo" class="list"></div>
@@ -77,6 +78,7 @@
     <div class="card">
       <div class="row">
         <button id="btnRefresh">🔄 Заявки <span id="badge" class="badge" style="display:none">0</span></button>
+        <button id="btnSummary" class="secondary">📊 Итоги</button>
         <button id="btnPlayers" class="secondary">👥 Игроки и суммы</button>
         <button id="btnEnd" class="secondary">🛑 Завершить игру</button>
       </div>
@@ -114,6 +116,10 @@
       <div id="myHistory" class="list"></div>
     </div>
   </div>
+  <div class="card">
+  <h3>📜 История игр</h3>
+  <div id="myGameHistory" class="list"></div>
+</div>
 
   <script>
     const tg = window.Telegram?.WebApp;
@@ -153,6 +159,15 @@
 
     // --- Navigation
     $('btnStart').onclick = async ()=>{
+      $('btnEndGlobal').onclick = async ()=>{
+  const r = await post('/api/admin/end');
+  if(r.ok){
+    alert('Игра завершена всеми игроками');
+    resetToStart();
+  } else {
+    alert('Ошибка: ' + (r.error || ''));
+  }
+};
       const r = await post('/api/game/start');
       if(r.ok){
         $('screenStart').classList.add('hidden');
@@ -176,6 +191,16 @@
         loadMyHistory(); startPlayerPolling();
       }
     }
+    function startPlayerPolling(){
+  clearAll();
+  loadMyHistory();
+  loadGameHistory();
+  playerTimer = setInterval(()=>{
+    loadMyHistory();
+    loadGameHistory();
+  }, 5000);
+  roleTimer = setInterval(checkRoleChange, 5000);
+}
 
     // --- Player actions
     $('btnReq').onclick = async ()=>handleRequest('request');
@@ -183,7 +208,7 @@
 
     async function handleRequest(type){
       const amt = parseInt(($('chipsInput').value||'0'), 10);
-      if(amt<=0) return alert('Введите число > 0');
+      if(isNaN(amt) || amt < 0) return alert('Введите число ≥ 0');
       const r = await post('/api/player/request', {amount:amt, type});
       if(!r.ok) alert(r.error); else $('chipsInput').value='';
       loadMyHistory();
@@ -203,6 +228,27 @@
         box.appendChild(div);
       }
     }
+    async function loadGameHistory(){
+  const r = await post('/api/player/history');
+  const box = $('myGameHistory');
+  box.innerHTML = '';
+  if(!r.ok){ box.textContent = r.error; return; }
+  if(!r.history?.length){ box.innerHTML = '<i>История пуста</i>'; return; }
+  let total = 0;
+  for(const item of r.history.reverse()){
+    const color = item.status==='approved' ? (item.type==='request' ? '#da3633' : '#2ea043') : '#9da3ae';
+    const sign = item.type==='request' ? '-' : '+';
+    const row = document.createElement('div');
+    row.innerHTML = `${new Date(item.requested_at).toLocaleDateString()} — <b style="color:${color}">${sign}${item.amount}</b>`;
+    box.appendChild(row);
+    if(item.status==='approved'){
+      total += (item.type==='request' ? -item.amount : item.amount);
+    }
+  }
+  const sum = document.createElement('div');
+  sum.innerHTML = `<b>Итого:</b> ${total > 0 ? '+'+total : total}`;
+  box.appendChild(sum);
+}
 
     // --- Admin actions
     $('adminReqBtn').onclick = async ()=>adminRequest('request');
@@ -210,7 +256,7 @@
 
     async function adminRequest(type){
       const amt = parseInt(($('adminAmount').value||'0'), 10);
-      if(amt<=0) return alert('Введите число > 0');
+      if(isNaN(amt) || amt < 0) return alert('Введите число ≥ 0');
       const r = await post('/api/player/request', {amount:amt, type});
       if(!r.ok) alert(r.error); else $('adminAmount').value='';
       loadPending();
@@ -236,6 +282,15 @@
       const r = await post('/api/admin/change', { new_admin_user_id: val });
       if(r.ok){ adminUserId = val; alert('✅ Админ изменён'); } else alert(r.error);
     };
+    $('btnSummary').onclick = async ()=>{
+  const r = await post('/api/admin/summary');
+  if(r.ok){
+    const list = (r.transfers || []).join('\n');
+    alert(list || 'Все расчёты сведены, долгов нет.');
+  } else {
+    alert('Ошибка: ' + (r.error || ''));
+  }
+};
 
     async function loadPending(){
       const r = await post('/api/admin/pending');
@@ -344,6 +399,16 @@
     function clearAll(){
       clearInterval(playerTimer); clearInterval(adminTimer); clearInterval(roleTimer);
     }
+    function startPlayerPolling(){
+  clearAll();
+  loadMyHistory();
+  loadGameHistory();
+  playerTimer = setInterval(()=>{
+    loadMyHistory();
+    loadGameHistory();
+  }, 5000);
+  roleTimer = setInterval(checkRoleChange, 5000);
+}
 
     // initial load
     loadGameInfo();

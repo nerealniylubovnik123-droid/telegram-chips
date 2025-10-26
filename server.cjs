@@ -49,6 +49,13 @@ CREATE TABLE IF NOT EXISTS chip_tx (
   decided_at TEXT,
   decided_by TEXT
 );
+CREATE TABLE IF NOT EXISTS player_game_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  delta INTEGER NOT NULL,
+  total INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 const app = express();
@@ -182,7 +189,7 @@ app.post('/api/player/request', async (req, res) => {
   const { amount, type } = req.body || {};
   const a = parseInt(amount, 10);
   if (!['request', 'return'].includes(type)) return res.json({ ok: false, error: 'Invalid type' });
-  if (!Number.isInteger(a) || a <= 0) return res.json({ ok: false, error: 'Invalid amount' });
+  if (!Number.isInteger(a) || a < 0) return res.json({ ok: false, error: 'Invalid amount' });
 
   const game = getActiveGame();
   if (!game) return res.json({ ok: false, error: 'No active game' });
@@ -226,9 +233,7 @@ app.post('/api/admin/pending', (req, res) => {
   const user = req.tgUser;
   const game = getActiveGame();
   if (!game) return res.json({ ok: false, error: 'No active game' });
-  if (String(game.admin_user_id) !== String(user.id))
-    return res.json({ ok: false, error: 'Not admin' });
-
+  
   const rows = db.prepare(`
     SELECT t.id,t.user_id,t.type,t.amount,t.status,p.first_name,p.username
     FROM chip_tx t
@@ -255,6 +260,14 @@ app.post('/api/admin/decide', (req, res) => {
 
   db.prepare(`UPDATE chip_tx SET status=?, decided_at=datetime('now'), decided_by=? WHERE id=?`)
     .run(status, String(user.id), id);
+    if (status === 'approved') {
+  const sign = tx.type === 'request' ? 1 : -1;
+  const delta = sign * tx.amount;
+  const last = db.prepare(`SELECT total FROM player_game_history WHERE user_id=? ORDER BY id DESC LIMIT 1`).get(String(tx.user_id));
+  const total = (last?.total || 0) + delta;
+  db.prepare(`INSERT INTO player_game_history (user_id, delta, total) VALUES (?,?,?)`)
+    .run(String(tx.user_id), delta, total);
+}
 
   res.json({ ok: true });
 });
@@ -313,11 +326,49 @@ app.post('/api/admin/end', (req, res) => {
   }
 
   const result = db.prepare(`UPDATE game SET status='ended', ended_at=datetime('now') WHERE id=?`).run(game.id);
+  db.transaction(() => {
+  db.prepare(`DELETE FROM player WHERE game_id=?`).run(game.id);
+  db.prepare(`DELETE FROM chip_tx WHERE game_id=?`).run(game.id);
+})();
   if (result.changes === 0) return res.json({ ok: false, error: 'Failed to end game' });
 
   res.json({ ok: true });
 });
 
 /* ---------- STATIC ---------- */
+app.post('/api/admin/summary', (req, res) => {
+  const game = getActiveGame();
+  if (!game) return res.json({ ok:false, error:'No active game' });
+
+  const rows = db.prepare(`
+    SELECT p.user_id, p.first_name, p.username,
+      COALESCE(SUM(CASE WHEN t.type='request' AND t.status='approved' THEN t.amount ELSE 0 END),0) AS issued,
+      COALESCE(SUM(CASE WHEN t.type='return' AND t.status='approved' THEN t.amount ELSE 0 END),0) AS returned
+    FROM player p
+    LEFT JOIN chip_tx t ON t.user_id=p.user_id AND t.game_id=p.game_id
+    WHERE p.game_id=?
+    GROUP BY p.user_id
+  `).all(game.id);
+
+  const debtors = [], creditors = [];
+  for (const r of rows) {
+    const diff = r.returned - r.issued;
+    if (diff < 0) debtors.push({ ...r, owe: -diff });
+    else if (diff > 0) creditors.push({ ...r, get: diff });
+  }
+
+  const transfers = [];
+  let i = 0, j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const d = debtors[i], c = creditors[j];
+    const amt = Math.min(d.owe, c.get);
+    transfers.push(`${d.first_name || d.username || d.user_id} должен ${c.first_name || c.username || c.user_id} ${amt} фишек`);
+    d.owe -= amt; c.get -= amt;
+    if (d.owe === 0) i++;
+    if (c.get === 0) j++;
+  }
+
+  res.json({ ok:true, transfers });
+});
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
