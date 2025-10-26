@@ -362,16 +362,16 @@ $('btnEndGlobal').onclick = async ()=>{
 
     // --- Role / game state helpers
     function resetToStart(){
-      clearAll();
-      currentRole = null;
-      adminUserId = null;
-      $('screenAdmin').classList.add('hidden');
-      $('screenPlayer').classList.add('hidden');
-      $('screenRole').classList.remove('hidden');
-      $('screenStart').classList.remove('hidden');
-      loadGameInfo();
-      alert('🛑 Игра завершена. Начните новую.');
-    }
+  clearAll();
+  currentRole = null;
+  adminUserId = null;
+  $('screenAdmin').classList.add('hidden');
+  $('screenPlayer').classList.add('hidden');
+  $('screenRole').classList.add('hidden'); // скрываем выбор роли
+  $('screenStart').classList.remove('hidden'); // показываем только старт
+  loadGameInfo();
+  alert('🛑 Игра завершена. Начните новую.');
+}
 
     async function checkRoleChange(){
       const r = await post('/api/game/start');
