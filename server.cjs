@@ -321,18 +321,17 @@ app.post('/api/admin/end', (req, res) => {
   const game = getActiveGame();
   if (!game) return res.json({ ok: false, error: 'No active game' });
 
-  if (String(game.admin_user_id) !== String(user.id)) {
-    return res.json({ ok: false, error: 'Only admin can end the game' });
-  }
-
+  // Разрешаем завершать любому игроку
   const result = db.prepare(`UPDATE game SET status='ended', ended_at=datetime('now') WHERE id=?`).run(game.id);
-  db.transaction(() => {
-  db.prepare(`DELETE FROM player WHERE game_id=?`).run(game.id);
-  db.prepare(`DELETE FROM chip_tx WHERE game_id=?`).run(game.id);
-})();
   if (result.changes === 0) return res.json({ ok: false, error: 'Failed to end game' });
 
-  res.json({ ok: true });
+  // После завершения очищаем временные данные
+  db.transaction(() => {
+    db.prepare(`DELETE FROM player WHERE game_id=?`).run(game.id);
+    db.prepare(`DELETE FROM chip_tx WHERE game_id=?`).run(game.id);
+  })();
+
+  res.json({ ok: true, message: 'Game ended by player' });
 });
 
 /* ---------- STATIC ---------- */

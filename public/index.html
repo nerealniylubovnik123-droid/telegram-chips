@@ -384,17 +384,16 @@ $('btnEndGlobal').onclick = async ()=>{
 }
 
     async function checkRoleChange(){
-      const r = await post('/api/game/start');
-      if (r.ok && r.game) {
-        if (r.game.status === 'ended') {
-          resetToStart();
-          return;
-        }
-        if (adminUserId !== r.game.admin_user_id) {
-          adminUserId = r.game.admin_user_id;
-        }
-      }
+  const r = await post('/api/game/start');
+  if (r.ok && r.game) {
+    if (r.game.status === 'ended') {
+      resetToStart();
+      return;
     }
+    // Убираем автоматическую смену админа после завершения
+  }
+}
+
 
     // --- Polling timers
     let playerTimer, adminTimer, roleTimer;
