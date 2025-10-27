@@ -261,7 +261,8 @@ app.post('/api/admin/decide', (req, res) => {
   db.prepare(`UPDATE chip_tx SET status=?, decided_at=datetime('now'), decided_by=? WHERE id=?`)
     .run(status, String(user.id), id);
     if (status === 'approved') {
-  const sign = tx.type === 'request' ? 1 : -1;
+  // Взял фишки → минус, вернул → плюс
+  const sign = tx.type === 'request' ? -1 : 1;
   const delta = sign * tx.amount;
   const last = db.prepare(`SELECT total FROM player_game_history WHERE user_id=? ORDER BY id DESC LIMIT 1`).get(String(tx.user_id));
   const total = (last?.total || 0) + delta;
