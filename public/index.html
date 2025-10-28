@@ -202,8 +202,8 @@
       if (!r.ok) { box.textContent = r.error || 'Ошибка'; return; }
       if (!r.game) { box.innerHTML = '<div>Нет активной игры</div>'; return; }
       const a = r.admin;
-      const who = \`\${a?.first_name || 'Неизвестно'}\${a?.username ? ' @' + a.username : ''}\`;
-      box.innerHTML = \`<div>Статус: <b>активна</b></div><div>Админ: <b>\${who}</b></div>\`;
+      const who = `${a?.first_name || 'Неизвестно'}${a?.username ? ' @' + a.username : ''}`;
+      box.innerHTML = `<div>Статус: <b>активна</b></div><div>Админ: <b>${who}</b></div>`;
       adminUserId = r.game.admin_user_id;
     }
 
@@ -267,8 +267,8 @@
       for(const item of r.history){
         const iconId = item.status==='approved' ? 'i-approve' : item.status==='rejected' ? 'i-reject' : 'i-clock';
         const div=document.createElement('div');
-        div.innerHTML = \`<b>\${item.type==='request'?'Запрос':'Возврат'}</b> · \${item.amount}
-          <span class="status \${item.status}"><svg class="icon"><use href="#\${iconId}"/></svg>\${item.status}</span>\`;
+        div.innerHTML = `<b>${item.type==='request'?'Запрос':'Возврат'}</b> · ${item.amount}
+          <span class="status ${item.status}"><svg class="icon"><use href="#${iconId}"/></svg>${item.status}</span>`;
         box.appendChild(div);
       }
     }
@@ -286,13 +286,13 @@
         const sign = delta >= 0 ? '+' : '';
         const dateStr = it.created_at ? new Date(it.created_at.replace(' ', 'T')).toLocaleDateString() : '';
         const row = document.createElement('div');
-        row.innerHTML = \`\${dateStr} — <b style="color:\${color}">\${sign}\${Math.abs(delta)}</b> <span class="muted">(итог: \${it.total})</span>\`;
+        row.innerHTML = `${dateStr} — <b style="color:${color}">${sign}${Math.abs(delta)}</b> <span class="muted">(итог: ${it.total})</span>`;
         box.appendChild(row);
       }
       const lastTotal = arr[0]?.total ?? 0;
       const sum = document.createElement('div');
       const sumColor = lastTotal >= 0 ? '#2ea043' : '#da3633';
-      sum.innerHTML = \`<b>Итого по всем играм:</b> <span style="color:\${sumColor}">\${lastTotal >= 0 ? '+' : ''}\${lastTotal}</span>\`;
+      sum.innerHTML = `<b>Итого по всем играм:</b> <span style="color:${sumColor}">${lastTotal >= 0 ? '+' : ''}${lastTotal}</span>`;
       box.appendChild(sum);
     }
 
@@ -306,15 +306,15 @@
       for (const p of players){
         const header = document.createElement('div');
         const totalColor = p.total >= 0 ? '#2ea043' : '#da3633';
-        const who = \`\${p.first_name || 'Игрок'}\${p.username ? ' @'+p.username : ''}\`;
-        header.innerHTML = \`<b>\${who}</b> — итог: <b style="color:\${totalColor}">\${p.total >= 0 ? '+' : ''}\${p.total}</b>\`;
+        const who = `${p.first_name || 'Игрок'}${p.username ? ' @'+p.username : ''}`;
+        header.innerHTML = `<b>${who}</b> — итог: <b style="color:${totalColor}">${p.total >= 0 ? '+' : ''}${p.total}</b>`;
         list.appendChild(header);
         for (const e of p.entries){
           const color = e.delta >= 0 ? '#2ea043' : '#da3633';
           const dateStr = e.requested_at ? new Date(e.requested_at.replace(' ','T')).toLocaleString() : '';
           const row = document.createElement('div');
           row.style.paddingLeft = '10px';
-          row.innerHTML = \`\${dateStr} — \${e.type==='request' ? 'Запрос' : 'Возврат'}: <b style="color:\${color}">\${e.delta >= 0 ? '+' : ''}\${Math.abs(e.delta)}</b>\`;
+          row.innerHTML = `${dateStr} — ${e.type==='request' ? 'Запрос' : 'Возврат'}: <b style="color:${color}">${e.delta >= 0 ? '+' : ''}${Math.abs(e.delta)}</b>`;
           list.appendChild(row);
         }
       }
@@ -367,13 +367,13 @@
       }
       for(const it of items){
         const el = document.createElement('div');
-        el.className = \`req \${it.status}\`;
-        el.innerHTML = \`<b>\${it.first_name||'Игрок'} \${it.username?('@'+it.username):''}</b><br>
-        \${it.type==='request'?'Просит':'Возвращает'} <b>\${it.amount}</b> фишек
+        el.className = `req ${it.status}`;
+        el.innerHTML = `<b>${it.first_name||'Игрок'} ${it.username?('@'+it.username):''}</b><br>
+        ${it.type==='request'?'Просит':'Возвращает'} <b>${it.amount}</b> фишек
         <div class="row" style="margin-top:6px">
-          <button data-id="\${it.id}" data-s="approved" class="btn"><svg class="icon"><use href="#i-approve"/></svg> Одобрить</button>
-          <button class="btn secondary" data-id="\${it.id}" data-s="rejected"><svg class="icon"><use href="#i-reject"/></svg> Отклонить</button>
-        </div>\`;
+          <button data-id="${it.id}" data-s="approved" class="btn"><svg class="icon"><use href="#i-approve"/></svg> Одобрить</button>
+          <button class="btn secondary" data-id="${it.id}" data-s="rejected"><svg class="icon"><use href="#i-reject"/></svg> Отклонить</button>
+        </div>`;
         list.appendChild(el);
       }
       list.querySelectorAll('button[data-id]').forEach(btn=>{
@@ -395,11 +395,11 @@
       for(const p of r.players){
         const color = p.diff>0?'#2ea043':p.diff<0?'#da3633':'#f0ad4e';
         const row = document.createElement('div');
-        row.innerHTML = \`<b>\${p.first_name||'Игрок'} \${p.username?('@'+p.username):''}</b> — выдано: <b>\${p.issued}</b>, возвращено: <b>\${p.returned}</b>, итог: <b style="color:\${color}">\${p.diff}</b>\`;
+        row.innerHTML = `<b>${p.first_name||'Игрок'} ${p.username?('@'+p.username):''}</b> — выдано: <b>${p.issued}</b>, возвращено: <b>${p.returned}</b>, итог: <b style="color:${color}">${p.diff}</b>`;
         box.appendChild(row);
         const opt = document.createElement('option');
         opt.value = p.user_id;
-        opt.textContent = \`\${p.first_name||'Игрок'} \${p.username?('@'+p.username):''}\`;
+        opt.textContent = `${p.first_name||'Игрок'} ${p.username?('@'+p.username):''}`;
         sel.appendChild(opt);
       }
     }
