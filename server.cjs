@@ -132,20 +132,28 @@ app.post('/api/game/info', (req, res) => {
 
 app.post('/api/game/start', (req, res) => {
   const user = req.tgUser;
+  const asAdmin = !!req.body?.asAdmin; // ВАЖНО: приходит с фронта
   let game = getActiveGame();
+
   if (!game) {
+    if (!asAdmin) {
+      return res.json({ ok: false, error: 'Игра ещё не создана. Админ должен создать игру.' });
+    }
     const info = db.transaction(() => {
       const r = db.prepare(`INSERT INTO game (admin_user_id) VALUES (?)`).run(String(user.id));
       const gid = r.lastInsertRowid;
-      db.prepare(`INSERT INTO player (game_id,user_id,first_name,username,is_admin) VALUES (?,?,?,?,1)`)
+      db.prepare(`INSERT INTO player (game_id,user_id,first_name,username,is_admin)
+                  VALUES (?,?,?,?,1)`)
         .run(gid, String(user.id), user.first_name || '', user.username || null);
       return db.prepare(`SELECT * FROM game WHERE id=?`).get(gid);
     })();
     game = info;
   } else {
-    db.prepare(`INSERT OR IGNORE INTO player (game_id,user_id,first_name,username,is_admin) VALUES (?,?,?,?,0)`)
+    db.prepare(`INSERT OR IGNORE INTO player (game_id,user_id,first_name,username,is_admin)
+                VALUES (?,?,?,?,0)`)
       .run(game.id, String(user.id), user.first_name || '', user.username || null);
   }
+
   res.json({ ok: true, game });
 });
 
