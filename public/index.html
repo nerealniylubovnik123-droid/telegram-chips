@@ -46,7 +46,7 @@
 
   <div id="screenStart">
     <button id="btnStart">Начать / Присоединиться</button>
-      <button id="btnEndGlobal" class="secondary" style="margin-top:10px">🛑 Завершить игру</button>
+    <button id="btnEndGlobal" class="secondary" style="margin-top:10px">🛑 Завершить игру</button>
     <div class="card" style="margin-top:12px">
       <h3>Статус игры</h3>
       <div id="gameInfo" class="list"></div>
@@ -63,7 +63,6 @@
     </div>
   </div>
 
-  <!-- ADMIN -->
   <div id="screenAdmin" class="hidden">
     <div class="role-label">👑 Вы администратор</div>
 
@@ -80,6 +79,7 @@
         <button id="btnRefresh">🔄 Заявки <span id="badge" class="badge" style="display:none">0</span></button>
         <button id="btnSummary" class="secondary">📊 Итоги</button>
         <button id="btnPlayers" class="secondary">👥 Игроки и суммы</button>
+        <button id="btnGameHistory" class="secondary">📜 История игроков</button>
         <button id="btnEnd" class="secondary">🛑 Завершить игру</button>
       </div>
     </div>
@@ -97,9 +97,13 @@
         <button id="btnChangeAdmin">👑 Сделать админом</button>
       </div>
     </div>
+
+    <div id="adminSectionGameHistory" class="card hidden">
+      <h3>📜 История игроков (текущая игра)</h3>
+      <div id="adminHistoryList" class="list"></div>
+    </div>
   </div>
 
-  <!-- PLAYER -->
   <div id="screenPlayer" class="hidden">
     <div class="role-label">🎮 Вы игрок</div>
 
@@ -115,11 +119,12 @@
       <h3>🧾 Мои заявки</h3>
       <div id="myHistory" class="list"></div>
     </div>
+
+    <div class="card">
+      <h3>📜 История игр</h3>
+      <div id="myGameHistory" class="list"></div>
+    </div>
   </div>
-  <div class="card">
-  <h3>📜 История игр</h3>
-  <div id="myGameHistory" class="list"></div>
-</div>
 
   <script>
     const tg = window.Telegram?.WebApp;
@@ -128,7 +133,6 @@
     const $ = id => document.getElementById(id);
     const initData = tg?.initData || "";
     const initDataUnsafe = JSON.stringify(tg?.initDataUnsafe || {});
-    const userId = tg?.initDataUnsafe?.user?.id;
     const bodyWithAuth = (extra={}) => JSON.stringify(Object.assign({}, extra, {__initData:initData,__initDataUnsafe:initDataUnsafe}));
 
     async function post(path, payloadObj={}) {
@@ -140,42 +144,34 @@
     let adminUserId = null;
     let lastPendingCount = 0;
 
-    // --- Start screen info
     async function loadGameInfo() {
       const box = $('gameInfo');
       box.innerHTML = '<span class="muted">Загрузка…</span>';
       const r = await post('/api/game/info');
       if (!r.ok) { box.textContent = r.error || 'Ошибка'; return; }
-      if (!r.game) {
-        box.innerHTML = '<div>Нет активной игры</div>';
-        return;
-      }
+      if (!r.game) { box.innerHTML = '<div>Нет активной игры</div>'; return; }
       const a = r.admin;
       const who = `${a?.first_name || 'Неизвестно'}${a?.username ? ' @' + a.username : ''}`;
-      box.innerHTML = `<div>Статус: <b>активна</b></div>
-                       <div>Админ: <b>${who}</b></div>`;
+      box.innerHTML = `<div>Статус: <b>активна</b></div><div>Админ: <b>${who}</b></div>`;
       adminUserId = r.game.admin_user_id;
     }
 
-    // --- Navigation
     $('btnStart').onclick = async ()=>{
-  const r = await post('/api/game/start');
-  if(r.ok){
-    $('screenStart').classList.add('hidden');
-    $('screenRole').classList.remove('hidden');
-    adminUserId = r.game.admin_user_id;
-  } else alert(r.error);
-};
+      const r = await post('/api/game/start');
+      if(r.ok){
+        $('screenStart').classList.add('hidden');
+        $('screenRole').classList.remove('hidden');
+        adminUserId = r.game.admin_user_id;
+      } else alert(r.error);
+    };
 
-$('btnEndGlobal').onclick = async ()=>{
-  const r = await post('/api/admin/end');
-  if(r.ok){
-    alert('Игра завершена всеми игроками');
-    resetToStart();
-  } else {
-    alert('Ошибка: ' + (r.error || ''));
-  }
-};
+    $('btnEndGlobal').onclick = async ()=>{
+      const r = await post('/api/admin/end');
+      if(r.ok){
+        alert('Игра завершена');
+        resetToStart();
+      } else alert('Ошибка: ' + (r.error || ''));
+    };
 
     $('asAdmin').onclick = ()=>switchRole('admin');
     $('asPlayer').onclick = ()=>switchRole('player');
@@ -187,28 +183,18 @@ $('btnEndGlobal').onclick = async ()=>{
       $('screenAdmin').classList.toggle('hidden', role!=='admin');
       $('screenPlayer').classList.toggle('hidden', role!=='player');
       if(role==='admin'){
-  loadPending();
-  loadPlayers();
-  loadGameHistory(); // 👈 добавляем вызов истории
-  startAdminPolling();
-} else {
-  loadMyHistory();
-  loadGameHistory(); // 👈 добавляем и здесь, если ещё не добавлено
-  startPlayerPolling();
-}
+        loadPending(); loadPlayers(); loadGameHistory(); startAdminPolling();
+      } else {
+        loadMyHistory(); loadGameHistory(); startPlayerPolling();
+      }
     }
-    function startPlayerPolling(){
-  clearAll();
-  loadMyHistory();
-  loadGameHistory();
-  playerTimer = setInterval(()=>{
-    loadMyHistory();
-    loadGameHistory();
-  }, 5000);
-  roleTimer = setInterval(checkRoleChange, 5000);
-}
 
-    // --- Player actions
+    $('btnGameHistory').onclick = ()=>{
+      const box = $('adminSectionGameHistory');
+      box.classList.toggle('hidden');
+      if(!box.classList.contains('hidden')) loadAdminGameHistory();
+    };
+
     $('btnReq').onclick = async ()=>handleRequest('request');
     $('btnReturn').onclick = async ()=>handleRequest('return');
 
@@ -234,37 +220,55 @@ $('btnEndGlobal').onclick = async ()=>{
         box.appendChild(div);
       }
     }
+
     async function loadGameHistory(){
-  const r = await post('/api/player/game-history');
-  const box = $('myGameHistory');
-  box.innerHTML = '';
-  if(!r.ok){ box.textContent = r.error || 'Ошибка'; return; }
+      const r = await post('/api/player/game-history');
+      const box = $('myGameHistory');
+      box.innerHTML = '';
+      if(!r.ok){ box.textContent = r.error || 'Ошибка'; return; }
+      const arr = r.history || [];
+      if(!arr.length){ box.innerHTML = '<i>История пуста</i>'; return; }
+      for (const it of arr) {
+        const delta = Number(it.delta) || 0;
+        const color = delta >= 0 ? '#2ea043' : '#da3633';
+        const sign = delta >= 0 ? '+' : '';
+        const dateStr = it.created_at ? new Date(it.created_at.replace(' ', 'T')).toLocaleDateString() : '';
+        const row = document.createElement('div');
+        row.innerHTML = `${dateStr} — <b style="color:${color}">${sign}${Math.abs(delta)}</b> <span class="muted">(итог: ${it.total})</span>`;
+        box.appendChild(row);
+      }
+      const lastTotal = arr[0]?.total ?? 0;
+      const sum = document.createElement('div');
+      sum.innerHTML = `<b>Итого по всем играм:</b> ${lastTotal >= 0 ? '+' : ''}${lastTotal}`;
+      box.appendChild(sum);
+    }
 
-  const arr = r.history || [];
-  if(!arr.length){ box.innerHTML = '<i>История пуста</i>'; return; }
+    async function loadAdminGameHistory(){
+      const r = await post('/api/admin/game-history');
+      const list = $('adminHistoryList');
+      list.innerHTML = '';
+      if(!r.ok){ list.textContent = r.error || 'Ошибка'; return; }
+      const players = r.players || [];
+      if(!players.length){ list.innerHTML = '<i>Нет записей</i>'; return; }
+      for (const p of players){
+        const header = document.createElement('div');
+        const totalColor = p.total >= 0 ? '#2ea043' : '#da3633';
+        const who = `${p.first_name || 'Игрок'}${p.username ? ' @'+p.username : ''}`;
+        header.innerHTML = `<b>${who}</b> — итог: <b style="color:${totalColor}">${p.total >= 0 ? '+' : ''}${p.total}</b>`;
+        list.appendChild(header);
+        for (const e of p.entries){
+          const color = e.delta >= 0 ? '#2ea043' : '#da3633';
+          const dateStr = e.requested_at ? new Date(e.requested_at.replace(' ','T')).toLocaleString() : '';
+          const row = document.createElement('div');
+          row.style.paddingLeft = '10px';
+          row.innerHTML = `${dateStr} — ${e.type==='request' ? 'Запрос' : 'Возврат'}: <b style="color:${color}">${e.delta >= 0 ? '+' : ''}${Math.abs(e.delta)}</b>`;
+          list.appendChild(row);
+        }
+      }
+    }
 
-  // показываем последнюю запись сверху
-  for (const it of arr) {
-    const delta = Number(it.delta) || 0;
-    const color = delta >= 0 ? '#2ea043' : '#da3633';
-    const sign = delta >= 0 ? '+' : '';
-    // created_at из SQLite формата "YYYY-MM-DD HH:MM:SS"
-    const dateStr = it.created_at ? new Date(it.created_at.replace(' ', 'T')).toLocaleDateString() : '';
-    const row = document.createElement('div');
-    row.innerHTML = `${dateStr} — <b style="color:${color}">${sign}${Math.abs(delta)}</b> <span class="muted">(итог: ${it.total})</span>`;
-    box.appendChild(row);
-  }
-
-  const lastTotal = arr[0]?.total ?? 0;
-  const sum = document.createElement('div');
-  sum.innerHTML = `<b>Итого по всем играм:</b> ${lastTotal >= 0 ? '+' : ''}${lastTotal}`;
-  box.appendChild(sum);
-}
-
-    // --- Admin actions
     $('adminReqBtn').onclick = async ()=>adminRequest('request');
     $('adminRetBtn').onclick = async ()=>adminRequest('return');
-
     async function adminRequest(type){
       const amt = parseInt(($('adminAmount').value||'0'), 10);
       if(isNaN(amt) || amt < 0) return alert('Введите число ≥ 0');
@@ -280,12 +284,8 @@ $('btnEndGlobal').onclick = async ()=>{
     };
     $('btnEnd').onclick = async ()=>{
       const r = await post('/api/admin/end');
-      if (r.ok) {
-        alert('Игра завершена');
-        resetToStart();
-      } else {
-        alert('Ошибка: ' + r.error);
-      }
+      if (r.ok) { alert('Игра завершена'); resetToStart(); }
+      else { alert('Ошибка: ' + r.error); }
     };
     $('btnChangeAdmin').onclick = async ()=>{
       const val = $('newAdminSelect').value;
@@ -294,28 +294,23 @@ $('btnEndGlobal').onclick = async ()=>{
       if(r.ok){ adminUserId = val; alert('✅ Админ изменён'); } else alert(r.error);
     };
     $('btnSummary').onclick = async ()=>{
-  const r = await post('/api/admin/summary');
-  if(r.ok){
-    const list = (r.transfers || []).join('\n');
-    alert(list || 'Все расчёты сведены, долгов нет.');
-  } else {
-    alert('Ошибка: ' + (r.error || ''));
-  }
-};
+      const r = await post('/api/admin/summary');
+      if(r.ok){
+        const list = (r.transfers || []).join('\\n');
+        alert(list || 'Все расчёты сведены, долгов нет.');
+      } else alert('Ошибка: ' + (r.error || ''));
+    };
 
     async function loadPending(){
       const r = await post('/api/admin/pending');
       const list = $('reqList'), badge = $('badge');
       list.innerHTML = '';
       if(!r.ok){ list.textContent = r.error; badge.style.display='none'; return; }
-
       const items = r.requests || [];
       if(items.length===0){ badge.style.display='none'; } else { badge.textContent = items.length; badge.style.display='inline-block'; }
-
       if (currentRole === 'admin') {
         const playersPanel = $('adminSectionPlayers');
         const requestsPanel = $('adminSectionRequests');
-
         if (items.length > lastPendingCount) {
           if (!playersPanel.classList.contains('hidden')) playersPanel.classList.add('hidden');
           requestsPanel.classList.add('pulse');
@@ -325,7 +320,6 @@ $('btnEndGlobal').onclick = async ()=>{
         }
         lastPendingCount = items.length;
       }
-
       if(items.length===0){
         list.innerHTML = '<i>Нет активных заявок</i>';
         return;
@@ -362,7 +356,6 @@ $('btnEndGlobal').onclick = async ()=>{
         const row = document.createElement('div');
         row.innerHTML = `<b>${p.first_name||'Игрок'} ${p.username?('@'+p.username):''}</b> — выдано: <b>${p.issued}</b>, возвращено: <b>${p.returned}</b>, итог: <b style="color:${color}">${p.diff}</b>`;
         box.appendChild(row);
-
         const opt = document.createElement('option');
         opt.value = p.user_id;
         opt.textContent = `${p.first_name||'Игрок'} ${p.username?('@'+p.username):''}`;
@@ -370,57 +363,42 @@ $('btnEndGlobal').onclick = async ()=>{
       }
     }
 
-    // --- Role / game state helpers
     function resetToStart(){
-  clearAll();
-  currentRole = null;
-  adminUserId = null;
-  $('screenAdmin').classList.add('hidden');
-  $('screenPlayer').classList.add('hidden');
-  $('screenRole').classList.add('hidden'); // скрываем выбор роли
-  $('screenStart').classList.remove('hidden'); // показываем только старт
-  loadGameInfo();
-  alert('🛑 Игра завершена. Начните новую.');
-}
+      clearAll();
+      currentRole = null;
+      adminUserId = null;
+      $('screenAdmin').classList.add('hidden');
+      $('screenPlayer').classList.add('hidden');
+      $('screenRole').classList.add('hidden');
+      $('screenStart').classList.remove('hidden');
+      loadGameInfo();
+      alert('🛑 Игра завершена. Начните новую.');
+    }
 
     async function checkRoleChange(){
-  const r = await post('/api/game/start');
-  if (r.ok && r.game) {
-    if (r.game.status === 'ended') {
-      resetToStart();
-      return;
+      const r = await post('/api/game/start');
+      if (r.ok && r.game) {
+        if (r.game.status === 'ended') { resetToStart(); return; }
+      }
     }
-    // Убираем автоматическую смену админа после завершения
-  }
-}
 
-
-    // --- Polling timers
     let playerTimer, adminTimer, roleTimer;
     function startPlayerPolling(){
-      clearAll(); loadMyHistory();
-      playerTimer = setInterval(loadMyHistory, 5000);
+      clearAll();
+      loadMyHistory();
+      loadGameHistory();
+      playerTimer = setInterval(()=>{ loadMyHistory(); loadGameHistory(); }, 5000);
       roleTimer = setInterval(checkRoleChange, 5000);
     }
     function startAdminPolling(){
-      clearAll(); loadPending();
+      clearAll();
+      loadPending();
       adminTimer = setInterval(()=>{ loadPending(); checkRoleChange(); }, 5000);
     }
     function clearAll(){
       clearInterval(playerTimer); clearInterval(adminTimer); clearInterval(roleTimer);
     }
-    function startPlayerPolling(){
-  clearAll();
-  loadMyHistory();
-  loadGameHistory();
-  playerTimer = setInterval(()=>{
-    loadMyHistory();
-    loadGameHistory();
-  }, 5000);
-  roleTimer = setInterval(checkRoleChange, 5000);
-}
 
-    // initial load
     loadGameInfo();
   </script>
 </body>
