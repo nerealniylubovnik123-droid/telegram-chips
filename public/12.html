@@ -2,106 +2,51 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>🎲 Chips Game</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
   <style>
-    :root{
-      --bg0:#070a10; --bg1:#0b0f18; --bg2:#0e1420;
-      --card:rgba(15,21,34,0.85); --line:#1a2434;
-      --text:#eaf0ff; --muted:#9bb0c7;
-      --acc:#00c2b3; --acc2:#67fff3; --danger:#ff4d6d;
-      --shadow:0 18px 40px rgba(0,0,0,.45);
+    :root {
+      --bg-dark: #0d1117;
+      --bg-card: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --accent: #2f81f7;
+      --green: #2ea043;
+      --red: #da3633;
+      --yellow: #f0ad4e;
+      --shadow: 0 4px 10px rgba(0,0,0,0.25);
     }
-    body[data-theme='light']{
-      --bg0:#f6f8fc; --bg1:#f3f6fb; --bg2:#eef2f8;
-      --card:rgba(255,255,255,0.85); --line:#d8e0ee;
-      --text:#0a1630; --muted:#5c6b82;
-      --acc:#00b3a4; --acc2:#21e6d4; --danger:#c43d55;
-      --shadow:0 12px 30px rgba(16,24,40,.10);
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%;margin:0;padding:0}
-    body{
-      color:var(--text);
-      font:16px/1.45 'Inter',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-      background:linear-gradient(120deg,var(--bg0),var(--bg1),var(--bg2));
-      background-size:300% 300%;
-      animation:bgMove 20s ease infinite;
-      transition:background .4s ease,color .3s ease;
-      padding:16px 12px 28px;
-    }
-    @keyframes bgMove{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
-    .wrap{max-width:520px;margin:0 auto}
-    .header{
-      display:flex;align-items:center;gap:10px;
-      position:sticky;top:0;z-index:5;
-      background:color-mix(in oklab,var(--card) 86%, transparent 14%);
-      backdrop-filter:blur(10px);
-      border-radius:16px;
-      padding:10px 12px;
-      margin-bottom:16px;
-      border:1px solid var(--line);
-      box-shadow:0 2px 12px rgba(0,0,0,.3);
-    }
-    .logo{display:flex;align-items:center;gap:10px;font-weight:800}
-    .ic-bubble{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;
-      background:linear-gradient(180deg,#1fead9,#00b3a4);
-      box-shadow:0 10px 24px rgba(0,179,164,.35);
-    }
-    .icon{width:18px;height:18px;vertical-align:-2px;stroke-width:2;stroke:currentColor;fill:none}
-    .btn{appearance:none;border:1px solid var(--line);background:color-mix(in oklab,var(--card) 78%,var(--bg2) 22%);
-      color:var(--text);border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer;transition:all .2s ease;display:inline-flex;align-items:center;gap:8px}
-    .btn:hover{transform:translateY(-1px);border-color:var(--acc2)}
-    .btn.primary{background:linear-gradient(180deg,var(--acc2),var(--acc));color:#041412;border-color:#0aa497}
-    .btn.primary:hover{box-shadow:0 0 12px rgba(0,194,179,.35)}
-    .btn.secondary{background:color-mix(in oklab,var(--card) 82%,var(--bg2) 18%);color:var(--text)}
-    .btn.danger{background:linear-gradient(180deg,#ff6b81,#ff4d6d);color:#041412;border-color:#b42d4d}
-    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    body{font-family:system-ui, sans-serif;background:linear-gradient(180deg,#0d1117 0%,#111820 100%);color:var(--text);margin:0;padding:20px;transition:all .3s ease}
+    h1{text-align:center;font-weight:700;color:var(--accent);margin-bottom:20px}
+    button{background:var(--accent);border:none;padding:10px 16px;border-radius:10px;color:#fff;font-weight:600;cursor:pointer;transition:background .2s,transform .1s}
+    button:hover{transform:scale(1.02);background:#3889f8}
+    button.secondary{background:#30363d;color:#e6edf3}
+    button.secondary:hover{background:#3a414b}
+    input,select{padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);width:100%;box-sizing:border-box}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .hidden{display:none}
-    .card{
-      background:var(--card);border:1px solid var(--line);
-      border-radius:20px;padding:16px;box-shadow:var(--shadow);
-      margin:12px 0;backdrop-filter:blur(8px);transition:transform .2s ease
-    }
-    .card:hover{transform:translateY(-1px)}
-    input,select{
-      padding:10px;border-radius:12px;border:1px solid var(--line);
-      background:color-mix(in oklab,var(--card) 85%,var(--bg2) 15%);
-      color:var(--text);width:100%;box-sizing:border-box
-    }
-    .badge{display:inline-block;min-width:18px;padding:2px 8px;border-radius:999px;
-      background:color-mix(in oklab,#f0ad4e 30%, #0a0 0%);color:#111;font-weight:800;margin-left:6px}
-    .role-label{text-align:center;padding:6px 0;font-size:14px;color:var(--muted)}
+    .card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:var(--shadow);margin:10px 0;animation:fadeIn .4s ease}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+    .req{background:#1b212c;padding:10px;border-radius:10px;margin:6px 0;border-left:4px solid var(--accent)}
+    .req.pending{border-left-color:var(--yellow)}
+    .req.approved{border-left-color:var(--green)}
+    .req.rejected{border-left-color:var(--red)}
     .list{font-size:14px}
-    .list div{padding:8px 12px;border-radius:12px;margin-bottom:6px;border:1px solid var(--line);
-      background:color-mix(in oklab,var(--card) 85%,var(--bg2) 15%)}
-    .status{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800}
-    .status.approved{background:#2ea04322;color:#2ea043}
-    .status.rejected{background:#da363322;color:#da3633}
-    .status.pending{background:#f0ad4e22;color:#f0ad4e}
-    .muted{color:var(--muted)}
+    .list div{padding:6px 0;border-bottom:1px solid #2a313b}
+    .badge{display:inline-block;min-width:18px;padding:2px 6px;border-radius:999px;background:var(--yellow);color:#111;font-weight:700;margin-left:6px}
+    .role-label{text-align:center;padding:6px 0;font-size:14px;color:var(--yellow)}
+    .pulse{animation:pulse 1.2s ease 2}
+    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,129,247,.7)}70%{box-shadow:0 0 0 12px rgba(47,129,247,0)}100%{box-shadow:0 0 0 0 rgba(47,129,247,0)}}
+    .muted{color:#9da3ae}
   </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="header">
-    <div class="logo">
-      <div class="ic-bubble">
-        <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
-      </div>
-      <div>Chips Game</div>
-    </div>
-    <div style="flex:1"></div>
-    <button class="btn secondary" title="Настройки" style="width:40px;height:40px;display:grid;place-items:center;padding:0">
-      <svg class="icon" viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"></path><path d="M19.4 15a2 2 0 0 0 .4-1l1.6-1-1.6-1a2 2 0 0 0-.4-1l.6-1.6-1.6-.6a2 2 0 0 0-.8-.8l-.6-1.6-1.6.6a2 2 0 0 0-1-.4l-1-1.6-1 1.6a2 2 0 0 0-1 .4l-1.6-.6-.6 1.6a2 2 0 0 0-.8.8l-1.6.6.6 1.6a2 2 0 0 0-.4 1l-1.6 1 1.6 1a2 2 0 0 0 .4 1l-.6 1.6 1.6.6a2 2 0 0 0 .8.8l.6 1.6 1.6-.6a2 2 0 0 0 1 .4l1 1.6 1-1.6a2 2 0 0 0 1-.4l1.6.6.6-1.6a2 2 0 0 0 .8-.8l1.6-.6Z"></path></svg>
-    </button>
-  </div>
+  <h1>🎲 Chips Game</h1>
 
   <div id="screenStart">
-    <button id="btnStart" class="btn primary"><svg class="icon"><use href="#i-plus"/></svg> Начать / Присоединиться</button>
-    <button id="btnEndGlobal" class="btn danger" style="margin-top:10px"><svg class="icon"><use href="#i-stop"/></svg> Завершить игру</button>
+    <button id="btnStart">Начать / Присоединиться</button>
+    <button id="btnEndGlobal" class="secondary" style="margin-top:10px">🛑 Завершить игру</button>
     <div class="card" style="margin-top:12px">
       <h3>Статус игры</h3>
       <div id="gameInfo" class="list"></div>
@@ -112,29 +57,30 @@
     <div class="card">
       <h2>Выберите роль</h2>
       <div class="row">
-        <button id="asAdmin" class="btn"><svg class="icon"><use href="#i-users"/></svg> Администратор</button>
-        <button id="asPlayer" class="btn secondary"><svg class="icon"><use href="#i-coin"/></svg> Игрок</button>
+        <button id="asAdmin">🧩 Администратор</button>
+        <button id="asPlayer">🎮 Игрок</button>
       </div>
     </div>
   </div>
 
   <div id="screenAdmin" class="hidden">
     <div class="role-label">👑 Вы администратор</div>
+
     <div class="card">
       <div class="row">
         <input id="adminAmount" type="number" placeholder="Введите количество фишек" />
-        <button id="adminReqBtn" class="btn primary"><svg class="icon"><use href="#i-coin"/></svg> Взять</button>
-        <button id="adminRetBtn" class="btn secondary"><svg class="icon"><use href="#i-coin"/></svg> Вернуть</button>
+        <button id="adminReqBtn">💰 Взять</button>
+        <button id="adminRetBtn" class="secondary">♻️ Вернуть</button>
       </div>
     </div>
 
     <div class="card">
       <div class="row">
-        <button id="btnRefresh" class="btn"><svg class="icon"><use href="#i-refresh"/></svg> Заявки <span id="badge" class="badge" style="display:none">0</span></button>
-        <button id="btnSummary" class="btn secondary"><svg class="icon"><use href="#i-chart"/></svg> Итоги</button>
-        <button id="btnPlayers" class="btn secondary"><svg class="icon"><use href="#i-users"/></svg> Игроки и суммы</button>
-        <button id="btnGameHistory" class="btn secondary"><svg class="icon"><use href="#i-clock"/></svg> История игроков</button>
-        <button id="btnEnd" class="btn danger"><svg class="icon"><use href="#i-stop"/></svg> Завершить игру</button>
+        <button id="btnRefresh">🔄 Заявки <span id="badge" class="badge" style="display:none">0</span></button>
+        <button id="btnSummary" class="secondary">📊 Итоги</button>
+        <button id="btnPlayers" class="secondary">👥 Игроки и суммы</button>
+        <button id="btnGameHistory" class="secondary">📜 История игроков</button>
+        <button id="btnEnd" class="secondary">🛑 Завершить игру</button>
       </div>
     </div>
 
@@ -148,7 +94,7 @@
       <div id="playersList" class="list"></div>
       <div class="row" style="margin-top:10px">
         <select id="newAdminSelect"></select>
-        <button id="btnChangeAdmin" class="btn">👑 Сделать админом</button>
+        <button id="btnChangeAdmin">👑 Сделать админом</button>
       </div>
     </div>
 
@@ -160,17 +106,20 @@
 
   <div id="screenPlayer" class="hidden">
     <div class="role-label">🎮 Вы игрок</div>
+
     <div class="card">
       <div class="row">
         <input id="chipsInput" type="number" placeholder="Введите количество фишек">
-        <button id="btnReq" class="btn primary"><svg class="icon"><use href="#i-coin"/></svg> Запросить</button>
-        <button id="btnReturn" class="btn secondary"><svg class="icon"><use href="#i-coin"/></svg> Вернуть</button>
+        <button id="btnReq">💰 Запросить</button>
+        <button id="btnReturn" class="secondary">♻️ Вернуть</button>
       </div>
     </div>
+
     <div class="card">
       <h3>🧾 Мои заявки</h3>
       <div id="myHistory" class="list"></div>
     </div>
+
     <div class="card">
       <h3>📜 История игр</h3>
       <div id="myGameHistory" class="list"></div>
@@ -178,8 +127,8 @@
   </div>
 
   <script>
-    const tg = window.Telegram?.WebApp; tg?.expand();
-    if (tg?.colorScheme === 'light') document.body.dataset.theme = 'light';
+    const tg = window.Telegram?.WebApp;
+    tg?.expand();
 
     const $ = id => document.getElementById(id);
     const initData = tg?.initData || "";
@@ -202,8 +151,8 @@
       if (!r.ok) { box.textContent = r.error || 'Ошибка'; return; }
       if (!r.game) { box.innerHTML = '<div>Нет активной игры</div>'; return; }
       const a = r.admin;
-      const who = \`\${a?.first_name || 'Неизвестно'}\${a?.username ? ' @' + a.username : ''}\`;
-      box.innerHTML = \`<div>Статус: <b>активна</b></div><div>Админ: <b>\${who}</b></div>\`;
+      const who = `${a?.first_name || 'Неизвестно'}${a?.username ? ' @' + a.username : ''}`;
+      box.innerHTML = `<div>Статус: <b>активна</b></div><div>Админ: <b>${who}</b></div>`;
       adminUserId = r.game.admin_user_id;
     }
 
@@ -265,10 +214,9 @@
       if(!r.ok){ box.textContent = r.error; return; }
       if(!r.history?.length){ box.innerHTML = '<i>Нет заявок</i>'; return; }
       for(const item of r.history){
-        const iconId = item.status==='approved' ? 'i-approve' : item.status==='rejected' ? 'i-reject' : 'i-clock';
+        const color = item.status==='approved'?'#2ea043':item.status==='rejected'?'#da3633':'#f0ad4e';
         const div=document.createElement('div');
-        div.innerHTML = \`<b>\${item.type==='request'?'Запрос':'Возврат'}</b> · \${item.amount}
-          <span class="status \${item.status}"><svg class="icon"><use href="#\${iconId}"/></svg>\${item.status}</span>\`;
+        div.innerHTML = `<b>${item.type==='request'?'Запрос':'Возврат'}</b> · ${item.amount} · <span style="color:${color}">${item.status}</span>`;
         box.appendChild(div);
       }
     }
@@ -286,13 +234,12 @@
         const sign = delta >= 0 ? '+' : '';
         const dateStr = it.created_at ? new Date(it.created_at.replace(' ', 'T')).toLocaleDateString() : '';
         const row = document.createElement('div');
-        row.innerHTML = \`\${dateStr} — <b style="color:\${color}">\${sign}\${Math.abs(delta)}</b> <span class="muted">(итог: \${it.total})</span>\`;
+        row.innerHTML = `${dateStr} — <b style="color:${color}">${sign}${Math.abs(delta)}</b> <span class="muted">(итог: ${it.total})</span>`;
         box.appendChild(row);
       }
       const lastTotal = arr[0]?.total ?? 0;
       const sum = document.createElement('div');
-      const sumColor = lastTotal >= 0 ? '#2ea043' : '#da3633';
-      sum.innerHTML = \`<b>Итого по всем играм:</b> <span style="color:\${sumColor}">\${lastTotal >= 0 ? '+' : ''}\${lastTotal}</span>\`;
+      sum.innerHTML = `<b>Итого по всем играм:</b> ${lastTotal >= 0 ? '+' : ''}${lastTotal}`;
       box.appendChild(sum);
     }
 
@@ -306,15 +253,15 @@
       for (const p of players){
         const header = document.createElement('div');
         const totalColor = p.total >= 0 ? '#2ea043' : '#da3633';
-        const who = \`\${p.first_name || 'Игрок'}\${p.username ? ' @'+p.username : ''}\`;
-        header.innerHTML = \`<b>\${who}</b> — итог: <b style="color:\${totalColor}">\${p.total >= 0 ? '+' : ''}\${p.total}</b>\`;
+        const who = `${p.first_name || 'Игрок'}${p.username ? ' @'+p.username : ''}`;
+        header.innerHTML = `<b>${who}</b> — итог: <b style="color:${totalColor}">${p.total >= 0 ? '+' : ''}${p.total}</b>`;
         list.appendChild(header);
         for (const e of p.entries){
           const color = e.delta >= 0 ? '#2ea043' : '#da3633';
           const dateStr = e.requested_at ? new Date(e.requested_at.replace(' ','T')).toLocaleString() : '';
           const row = document.createElement('div');
           row.style.paddingLeft = '10px';
-          row.innerHTML = \`\${dateStr} — \${e.type==='request' ? 'Запрос' : 'Возврат'}: <b style="color:\${color}">\${e.delta >= 0 ? '+' : ''}\${Math.abs(e.delta)}</b>\`;
+          row.innerHTML = `${dateStr} — ${e.type==='request' ? 'Запрос' : 'Возврат'}: <b style="color:${color}">${e.delta >= 0 ? '+' : ''}${Math.abs(e.delta)}</b>`;
           list.appendChild(row);
         }
       }
@@ -361,19 +308,31 @@
       if(!r.ok){ list.textContent = r.error; badge.style.display='none'; return; }
       const items = r.requests || [];
       if(items.length===0){ badge.style.display='none'; } else { badge.textContent = items.length; badge.style.display='inline-block'; }
+      if (currentRole === 'admin') {
+        const playersPanel = $('adminSectionPlayers');
+        const requestsPanel = $('adminSectionRequests');
+        if (items.length > lastPendingCount) {
+          if (!playersPanel.classList.contains('hidden')) playersPanel.classList.add('hidden');
+          requestsPanel.classList.add('pulse');
+          requestsPanel.scrollIntoView({ behavior:'smooth', block:'start' });
+          try { tg?.HapticFeedback?.notificationOccurred('success'); } catch(e){}
+          setTimeout(()=>requestsPanel.classList.remove('pulse'), 1500);
+        }
+        lastPendingCount = items.length;
+      }
       if(items.length===0){
         list.innerHTML = '<i>Нет активных заявок</i>';
         return;
       }
       for(const it of items){
         const el = document.createElement('div');
-        el.className = \`req \${it.status}\`;
-        el.innerHTML = \`<b>\${it.first_name||'Игрок'} \${it.username?('@'+it.username):''}</b><br>
-        \${it.type==='request'?'Просит':'Возвращает'} <b>\${it.amount}</b> фишек
+        el.className = `req ${it.status}`;
+        el.innerHTML = `<b>${it.first_name||'Игрок'} ${it.username?('@'+it.username):''}</b><br>
+        ${it.type==='request'?'Просит':'Возвращает'} <b>${it.amount}</b> фишек
         <div class="row" style="margin-top:6px">
-          <button data-id="\${it.id}" data-s="approved" class="btn"><svg class="icon"><use href="#i-approve"/></svg> Одобрить</button>
-          <button class="btn secondary" data-id="\${it.id}" data-s="rejected"><svg class="icon"><use href="#i-reject"/></svg> Отклонить</button>
-        </div>\`;
+          <button data-id="${it.id}" data-s="approved">✅ Одобрить</button>
+          <button class="secondary" data-id="${it.id}" data-s="rejected">❌ Отклонить</button>
+        </div>`;
         list.appendChild(el);
       }
       list.querySelectorAll('button[data-id]').forEach(btn=>{
@@ -395,11 +354,11 @@
       for(const p of r.players){
         const color = p.diff>0?'#2ea043':p.diff<0?'#da3633':'#f0ad4e';
         const row = document.createElement('div');
-        row.innerHTML = \`<b>\${p.first_name||'Игрок'} \${p.username?('@'+p.username):''}</b> — выдано: <b>\${p.issued}</b>, возвращено: <b>\${p.returned}</b>, итог: <b style="color:\${color}">\${p.diff}</b>\`;
+        row.innerHTML = `<b>${p.first_name||'Игрок'} ${p.username?('@'+p.username):''}</b> — выдано: <b>${p.issued}</b>, возвращено: <b>${p.returned}</b>, итог: <b style="color:${color}">${p.diff}</b>`;
         box.appendChild(row);
         const opt = document.createElement('option');
         opt.value = p.user_id;
-        opt.textContent = \`\${p.first_name||'Игрок'} \${p.username?('@'+p.username):''}\`;
+        opt.textContent = `${p.first_name||'Игрок'} ${p.username?('@'+p.username):''}`;
         sel.appendChild(opt);
       }
     }
@@ -442,20 +401,5 @@
 
     loadGameInfo();
   </script>
-
-  <!-- SVG sprite -->
-  <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
-    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
-    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
-    <symbol id="i-coin" viewBox="0 0 24 24"><ellipse cx="12" cy="8" rx="7" ry="3"/><path d="M5 8v8c0 1.7 3.1 3 7 3s7-1.3 7-3V8"/></symbol>
-    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 1-2.3-5.7L20 8M20 4v4h-4"/></symbol>
-    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0Z"/><path d="M3 20a7 7 0 0 1 18 0"/></symbol>
-    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15v3M12 11v7M17 6v12"/></symbol>
-    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
-    <symbol id="i-approve" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></symbol>
-    <symbol id="i-reject" viewBox="0 0 24 24"><path d="M6 6l12 12M6 18L18 6"/></symbol>
-    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></symbol>
-  </svg>
-</div>
 </body>
 </html>
